@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Optional
+import threading
+from typing import Any, Callable, Optional
 
 from bs4 import BeautifulSoup
 
@@ -38,6 +39,7 @@ class GameScraper:
         checkpoint: Optional[Checkpoint] = None,
         failure_manager: Optional[Any] = None,
         ui_manager: Optional[UIManager] = None,
+        stop_event: Optional[threading.Event] = None,
     ):
         """初始化游戏爬虫。
 
@@ -46,6 +48,7 @@ class GameScraper:
             checkpoint: 可选的断点管理器。
             failure_manager: 可选的失败管理器。
             ui_manager: 可选的 UI 管理器。
+            stop_event: 可选的停止事件标志。
         """
         self.config = config or get_config()
         self.client = HttpClient(self.config)
@@ -53,6 +56,7 @@ class GameScraper:
         self.failure_manager = failure_manager
         self.db = DatabaseManager(self.config.output.db_path)
         self.ui = ui_manager or UIManager()
+        self.stop_event = stop_event
 
         # 构建基础 URL
         self.base_url = (
@@ -203,6 +207,10 @@ class GameScraper:
 
             with ThreadPoolExecutor(max_workers=self.config.scraper.max_workers) as executor:
                 for page in range(1, total_pages + 1):
+                    # 检查停止信号
+                    if self.stop_event and self.stop_event.is_set():
+                        break
+
                     if self.checkpoint and self.checkpoint.is_page_completed(page):
                         # self.ui.print(f"跳过已完成的第 {page} 页")
                         progress.update(page_task, advance=1)

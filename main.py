@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import signal
 import sys
+import threading
 import pyfiglet
 from pathlib import Path
 
@@ -172,14 +174,24 @@ def main() -> None:
         style="header",
     )
 
+    stop_event = threading.Event()
+
+    def signal_handler(signum, frame):
+        """处理信号（如 Ctrl+C）。"""
+        print("\n")
+        print("⚠️  接收到停止信号，正在停止... / Stopping...")
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, signal_handler)
+
     if args.command == "games":
-        run_games_scraper(config, args, failure_manager, ui)
+        run_games_scraper(config, args, failure_manager, ui, stop_event)
     elif args.command == "start":
         run_start(ui)
     elif args.command == "reviews":
-        run_reviews_scraper(config, args, failure_manager, ui)
+        run_reviews_scraper(config, args, failure_manager, ui, stop_event)
     elif args.command == "all":
-        run_all(config, args, failure_manager, ui)
+        run_all(config, args, failure_manager, ui, stop_event)
     elif args.command == "export":
         run_export(config, args, ui)
     elif args.command == "clean":
@@ -305,16 +317,23 @@ def run_clean(failure_manager: FailureManager | None = None, ui: Optional[UIMana
 
 
 def run_games_scraper(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
+    config: Config,
+    args: argparse.Namespace,
+    failure_manager: FailureManager,
+    ui: UIManager,
+    stop_event: threading.Event,
 ) -> None:
     """运行游戏信息爬虫。"""
-    checkpoint = Checkpoint(config=config) if args.resume else None
+    checkpoint = Checkpoint(config=config)
+    if not args.resume:
+        checkpoint.clear()
 
     scraper = GameScraper(
-        config=config, 
-        checkpoint=checkpoint, 
+        config=config,
+        checkpoint=checkpoint,
         failure_manager=failure_manager,
-        ui_manager=ui
+        ui_manager=ui,
+        stop_event=stop_event,
     )
     scraper.run(max_pages=args.pages)
 
@@ -322,16 +341,23 @@ def run_games_scraper(
 
 
 def run_reviews_scraper(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
+    config: Config,
+    args: argparse.Namespace,
+    failure_manager: FailureManager,
+    ui: UIManager,
+    stop_event: threading.Event,
 ) -> None:
     """运行评价历史爬虫。"""
-    checkpoint = Checkpoint(config=config) if args.resume else None
-    
+    checkpoint = Checkpoint(config=config)
+    if not args.resume:
+        checkpoint.clear()
+
     scraper = ReviewScraper(
-        config=config, 
-        checkpoint=checkpoint, 
+        config=config,
+        checkpoint=checkpoint,
         failure_manager=failure_manager,
-        ui_manager=ui
+        ui_manager=ui,
+        stop_event=stop_event,
     )
 
     if args.input:
@@ -351,31 +377,45 @@ def run_reviews_scraper(
 
 
 def run_all(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
+    config: Config,
+    args: argparse.Namespace,
+    failure_manager: FailureManager,
+    ui: UIManager,
+    stop_event: threading.Event,
 ) -> None:
     """运行完整爬取流程。"""
-    checkpoint = Checkpoint(config=config) if args.resume else None
-    
+    checkpoint = Checkpoint(config=config)
+    if not args.resume:
+        checkpoint.clear()
+
     ui.print_panel("Step 1/3: 爬取游戏基础信息", style="blue")
     game_scraper = GameScraper(
-        config=config, 
-        checkpoint=checkpoint, 
+        config=config,
+        checkpoint=checkpoint,
         failure_manager=failure_manager,
-        ui_manager=ui
+        ui_manager=ui,
+        stop_event=stop_event,
     )
     game_scraper.run(max_pages=args.pages)
+
+    if stop_event.is_set():
+        return
 
     ui.print("\n")
     ui.print_panel("Step 2/3: 爬取评价历史信息", style="blue")
     app_ids = game_scraper.get_app_ids()
-    
+
     review_scraper = ReviewScraper(
-        config=config, 
-        checkpoint=checkpoint, 
+        config=config,
+        checkpoint=checkpoint,
         failure_manager=failure_manager,
-        ui_manager=ui
+        ui_manager=ui,
+        stop_event=stop_event,
     )
     review_scraper.scrape_from_list(app_ids)
+
+    if stop_event.is_set():
+        return
 
     ui.print("\n")
     ui.print_panel("Step 3/3: 导出数据", style="blue")

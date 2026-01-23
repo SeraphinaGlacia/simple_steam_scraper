@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import datetime
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -38,6 +39,7 @@ class ReviewScraper:
         checkpoint: Optional[Checkpoint] = None,
         failure_manager: Optional[Any] = None,
         ui_manager: Optional[UIManager] = None,
+        stop_event: Optional[threading.Event] = None,
     ):
         """初始化评价爬虫。
 
@@ -46,6 +48,7 @@ class ReviewScraper:
             checkpoint: 可选的断点管理器。
             failure_manager: 可选的失败管理器。
             ui_manager: 可选的 UI 管理器。
+            stop_event: 可选的停止事件标志。
         """
         self.config = config or get_config()
         self.client = HttpClient(self.config)
@@ -53,6 +56,7 @@ class ReviewScraper:
         self.failure_manager = failure_manager
         self.db = DatabaseManager(self.config.output.db_path)
         self.ui = ui_manager or UIManager()
+        self.stop_event = stop_event
 
     def scrape_reviews(self, app_id: int) -> list[ReviewSnapshot]:
         """爬取指定游戏的评价历史数据并保存。
@@ -156,7 +160,11 @@ class ReviewScraper:
             task = progress.add_task("[green]抓取评价...", total=len(app_ids))
 
             with ThreadPoolExecutor(max_workers=self.config.scraper.max_workers) as executor:
-                futures = {executor.submit(self.scrape_reviews, app_id): app_id for app_id in app_ids}
+                futures = {}
+                for app_id in app_ids:
+                    if self.stop_event and self.stop_event.is_set():
+                        break
+                    futures[executor.submit(self.scrape_reviews, app_id)] = app_id
 
                 for future in as_completed(futures):
                     app_id = futures[future]
