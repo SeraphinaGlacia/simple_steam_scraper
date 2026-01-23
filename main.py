@@ -387,6 +387,11 @@ def run_all(
 def run_export(config: Config, args: argparse.Namespace, ui: UIManager) -> None:
     """导出数据。"""
     ui.print_info(f"正在导出数据到 [bold]{args.output}[/bold]...")
+    
+    if not Path(config.output.db_path).exists():
+        ui.print_error(f"数据库文件不存在: {config.output.db_path}\n请先运行 'python main.py games' 等相关命令抓取数据。")
+        return
+
     db = DatabaseManager(config.output.db_path)
     try:
         with ui.create_progress() as progress:
