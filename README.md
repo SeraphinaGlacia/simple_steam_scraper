@@ -1,5 +1,8 @@
 # Simple Steam Scraper
 
+[中文](README.md) | [English](README_EN.md)
+
+
 一个基于 Python 的轻量级、模块化且支持断点续传的 Steam 游戏数据爬虫，旨在帮助数据分析爱好者或科研人员快速获取 Steam 商店的游戏基础信息及历史评价趋势，数据直接导出为 .xlsx 格式，便于后续进行可视化分析或商业洞察。
 
 ## 功能特性
@@ -33,7 +36,7 @@
 ### 1. 安装依赖
 
 ```bash
-pip install requests beautifulsoup4 pandas openpyxl pyyaml
+pip install -r requirements.txt
 ```
 
 ### 2. 查看帮助
