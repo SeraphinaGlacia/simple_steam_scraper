@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import pyfiglet
 from pathlib import Path
 
 
@@ -45,6 +46,7 @@ def main() -> None:
   python main.py clean              # 清理临时文件和缓存
   python main.py reset              # 重置项目（删除所有数据，慎用！）
   python main.py retry              # 重试所有失败的任务
+  python main.py start              # 显示炫酷的启动界面！
 
 输出:
   data/steam_data.db    (SQLite 数据库，核心存储)
@@ -53,6 +55,12 @@ def main() -> None:
     )
 
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
+
+    # 启动界面命令
+    subparsers.add_parser(
+        "start",
+        help="显示炫酷的启动界面",
+    )
 
     # 游戏信息爬取命令
     games_parser = subparsers.add_parser(
@@ -167,6 +175,8 @@ def main() -> None:
 
     if args.command == "games":
         run_games_scraper(config, args, failure_manager, ui)
+    elif args.command == "start":
+        run_start(ui)
     elif args.command == "reviews":
         run_reviews_scraper(config, args, failure_manager, ui)
     elif args.command == "all":
@@ -226,6 +236,29 @@ def run_reset(config: Config, failure_manager: FailureManager, ui: UIManager) ->
     run_clean(failure_manager, ui)
 
     ui.print_success("✨ 项目已重置 / Project Reset Completed")
+
+
+def run_start(ui: UIManager) -> None:
+    """显示启动界面。"""
+    # 1. Big ASCII Art
+    try:
+        title = pyfiglet.figlet_format("Steam Scraper", font="slant")
+        ui.print(title, style="bold cyan")
+    except Exception:
+        # Fallback if font missing or error
+        ui.print_panel("[bold cyan]Steam Scraper[/bold cyan]", style="cyan")
+
+    # 2. Welcome Panel
+    ui.print_panel(
+        "[bold white]快速开始指南 / Getting Started:[/bold white]\n"
+        "1. 运行 [cyan]python main.py --help[/cyan] 查看所有可用命令。\n"
+        "2. 运行 [cyan]python main.py games[/cyan] 抓取游戏基础数据。\n"
+        "3. 运行 [cyan]python main.py reviews[/cyan] 抓取评价历史数据。\n"
+        "4. 运行 [cyan]python main.py export[/cyan] 导出最终 Excel 报表。\n\n"
+        "[dim]项目地址: github.com/SeraphinaGlacia/simple-steam-scraper[/dim]",
+        title="欢迎使用 Simple Steam Scraper",
+        style="blue",
+    )
 
 
 def run_clean(failure_manager: FailureManager | None = None, ui: Optional[UIManager] = None) -> None:
