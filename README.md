@@ -12,19 +12,36 @@
 
 ## 快速开始
 
-### 安装依赖
+### 0. 获取项目代码
+
+1.  **打开命令行工具**：
+    *   **Windows**: 按 `Win + R`，输入 `cmd` 并回车。
+    *   **Mac**: 打开 `Terminal` (终端)。
+
+2.  **克隆仓库**：
+    在终端中输入以下命令并执行，将代码下载到本地：
+    ```bash
+    git clone https://github.com/SeraphinaGlacia/simple-steam-scraper.git
+    ```
+
+3.  **进入项目目录**：
+    ```bash
+    cd simple-steam-scraper
+    ```
+
+### 1. 安装依赖
 
 ```bash
 pip install requests beautifulsoup4 pandas openpyxl pyyaml
 ```
 
-### 查看帮助
+### 2. 查看帮助
 
 ```bash
 python main.py --help
 ```
 
-### 爬取全部游戏（推荐-完整流程）
+### 3. 爬取全部游戏（推荐-完整流程）
 
 ```bash
 # 爬取全部游戏信息 + 评价历史（自动获取总页数）
@@ -34,7 +51,7 @@ python main.py all
 python main.py all --resume
 ```
 
-### 分步骤运行
+### 4. 分步骤运行（进阶用法）
 
 ```bash
 # 第一步：爬取游戏基础信息
@@ -45,13 +62,13 @@ python main.py games --pages 100  # 只爬取前 100 页
 python main.py reviews
 ```
 
-### 清理缓存和临时文件
+### 5. 清理缓存和临时文件
 
 ```bash
 python main.py clean
 ``` 
 
-### 输出文件
+### 6. 输出文件
 
 所有数据文件保存在 `data/` 目录：
 
@@ -101,6 +118,29 @@ http:
 output:
   data_dir: ./data     # 数据输出目录
 ```
+
+## 附录：运行机制
+
+本程序通过模拟用户浏览与数据接口查询的方式，实现对 Steam 游戏数据的自动化采集与整合。核心流程与文件交互如下：
+
+1.  **遍历并生成 App ID 清单**
+
+  - 程序首先访问 Steam 搜索页面，遍历指定分类下的游戏列表，解析 HTML 结构提取基础元数据（App ID）。
+  - **输出文件**：提取到的 ID 会被实时写入 `data/steam_appids.txt`，作为后续步骤的索引清单。
+
+2.  **进一步获取游戏详情信息**
+
+  - 程序读取上一步生成的清单（或直接利用内存中的数据），调用 Steam Store API 接口批量获取游戏详细信息（定价、开发商等）。
+  - **输出文件**：所有基础信息会被结构化并保存为 `data/steam_games_YYYYMMDD_HHMMSS.xlsx`，这是游戏基础信息数据总表。
+
+3.  **获取游戏评价历史**
+
+  - 针对清单中的每一个 App ID，程序进一步请求 Steam 评价直方图接口，获取自发布以来的评价趋势数据。
+  - **输出文件**：每个游戏的评价历史数据会被保存至 `data/steam_recommendations_data/` 目录下，确保时间序列数据井井有条。
+
+4.  **数据持久化与整合**
+
+  - 最终，程序确保所有采集到的信息（基础详情 Excel + 评价历史数据）都被完整落地，便于后续分析工具直接读取。
 
 ## License
 
