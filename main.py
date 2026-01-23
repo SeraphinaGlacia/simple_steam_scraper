@@ -42,11 +42,10 @@ def main() -> None:
   python main.py all --resume       # 从上次中断处继续
 
   # 数据管理
-  python main.py export             # 重新导出数据库到 Excel
+  python main.py export             # 导出数据库到 Excel
   python main.py clean              # 清理临时文件和缓存
   python main.py reset              # 重置项目（删除所有数据，慎用！）
   python main.py retry              # 重试所有失败的任务
-  python main.py start              # 显示炫酷的启动界面！
 
 输出:
   data/steam_data.db    (SQLite 数据库，核心存储)
@@ -59,7 +58,7 @@ def main() -> None:
     # 启动界面命令
     subparsers.add_parser(
         "start",
-        help="显示炫酷的启动界面",
+        help=argparse.SUPPRESS,  # 在帮助中隐藏
     )
 
     # 游戏信息爬取命令
