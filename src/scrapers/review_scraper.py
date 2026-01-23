@@ -16,6 +16,7 @@ from src.database import DatabaseManager
 from src.models import ReviewSnapshot
 from src.utils.checkpoint import Checkpoint
 from src.utils.http_client import HttpClient
+from src.utils.ui import UIManager
 
 
 class ReviewScraper:
@@ -28,6 +29,7 @@ class ReviewScraper:
         client: HTTP 客户端。
         checkpoint: 断点管理器。
         db: 数据库管理器。
+        ui: UI 管理器。
     """
 
     def __init__(
@@ -35,6 +37,7 @@ class ReviewScraper:
         config: Optional[Config] = None,
         checkpoint: Optional[Checkpoint] = None,
         failure_manager: Optional[Any] = None,
+        ui_manager: Optional[UIManager] = None,
     ):
         """初始化评价爬虫。
 
@@ -42,12 +45,14 @@ class ReviewScraper:
             config: 可选的配置对象。
             checkpoint: 可选的断点管理器。
             failure_manager: 可选的失败管理器。
+            ui_manager: 可选的 UI 管理器。
         """
         self.config = config or get_config()
         self.client = HttpClient(self.config)
         self.checkpoint = checkpoint
         self.failure_manager = failure_manager
         self.db = DatabaseManager(self.config.output.db_path)
+        self.ui = ui_manager or UIManager()
 
     def scrape_reviews(self, app_id: int) -> list[ReviewSnapshot]:
         """爬取指定游戏的评价历史数据并保存。
@@ -95,11 +100,11 @@ class ReviewScraper:
                 self.db.save_reviews(app_id, reviews)
                 if self.checkpoint:
                     self.checkpoint.mark_appid_completed(app_id)
-                print(f"已保存游戏 {app_id} 的 {len(reviews)} 条评价记录")
+                # print(f"已保存游戏 {app_id} 的 {len(reviews)} 条评价记录")
 
         except Exception as e:
             error_msg = f"爬取游戏 {app_id} 评价历史失败: {e}"
-            print(error_msg)
+            self.ui.print_error(error_msg)
             if self.failure_manager:
                 self.failure_manager.log_failure("review", app_id, str(e))
             if self.checkpoint:
@@ -118,7 +123,7 @@ class ReviewScraper:
         """
         file_path = Path(file_path)
         if not file_path.exists():
-            print(f"文件 {file_path} 不存在")
+            self.ui.print_error(f"文件 {file_path} 不存在")
             return
 
         app_ids = []
@@ -130,7 +135,7 @@ class ReviewScraper:
                 try:
                     app_ids.append(int(appid_str))
                 except ValueError:
-                    print(f"[警告] 无效的 AppID: {appid_str}")
+                    self.ui.print_warning(f"无效的 AppID: {appid_str}")
 
         self.scrape_from_list(app_ids)
 
@@ -143,14 +148,21 @@ class ReviewScraper:
         Args:
             app_ids: app_id 列表。
         """
-        print(f"开始爬取 {len(app_ids)} 个游戏的评价，并发数: {self.config.scraper.max_workers}")
+        self.ui.print_info(
+            f"开始爬取 {len(app_ids)} 个游戏的评价，并发数: {self.config.scraper.max_workers}"
+        )
 
-        with ThreadPoolExecutor(max_workers=self.config.scraper.max_workers) as executor:
-            futures = {executor.submit(self.scrape_reviews, app_id): app_id for app_id in app_ids}
+        with self.ui.create_progress() as progress:
+            task = progress.add_task("[green]抓取评价...", total=len(app_ids))
 
-            for future in as_completed(futures):
-                app_id = futures[future]
-                try:
-                    future.result()
-                except Exception as e:
-                    print(f"处理游戏 {app_id} 评价异常: {e}")
+            with ThreadPoolExecutor(max_workers=self.config.scraper.max_workers) as executor:
+                futures = {executor.submit(self.scrape_reviews, app_id): app_id for app_id in app_ids}
+
+                for future in as_completed(futures):
+                    app_id = futures[future]
+                    try:
+                        future.result()
+                    except Exception as e:
+                        self.ui.print_error(f"处理游戏 {app_id} 评价异常: {e}")
+                    finally:
+                        progress.update(task, advance=1)

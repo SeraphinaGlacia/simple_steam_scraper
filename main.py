@@ -11,6 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 
+
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -20,6 +21,7 @@ from src.scrapers.game_scraper import GameScraper
 from src.scrapers.review_scraper import ReviewScraper
 from src.utils.checkpoint import Checkpoint
 from src.utils.failure_manager import FailureManager
+from src.utils.ui import UIManager
 
 
 def main() -> None:
@@ -154,78 +156,98 @@ def main() -> None:
 
     config = Config.load()
     failure_manager = FailureManager(config)
+    ui = UIManager()
+
+    # 显示 Banner
+    ui.print_panel(
+        "[bold white]Simple Steam Scraper[/bold white]\n"
+        "[dim]github.com/SeraphinaGlacia/simple-steam-scraper[/dim]",
+        style="header",
+    )
 
     if args.command == "games":
-        run_games_scraper(config, args, failure_manager)
+        run_games_scraper(config, args, failure_manager, ui)
     elif args.command == "reviews":
-        run_reviews_scraper(config, args, failure_manager)
+        run_reviews_scraper(config, args, failure_manager, ui)
     elif args.command == "all":
-        run_all(config, args, failure_manager)
+        run_all(config, args, failure_manager, ui)
     elif args.command == "export":
-        run_export(config, args)
+        run_export(config, args, ui)
     elif args.command == "clean":
-        run_clean(failure_manager)
+        run_clean(failure_manager, ui)
     elif args.command == "reset":
-        run_reset(config, failure_manager)
+        run_reset(config, failure_manager, ui)
     elif args.command == "retry":
-        run_retry(config, args, failure_manager)
+        run_retry(config, args, failure_manager, ui)
 
-def run_reset(config: Config, failure_manager: FailureManager) -> None:
+
+def run_reset(config: Config, failure_manager: FailureManager, ui: UIManager) -> None:
     """重置项目，清除所有数据。"""
-    print("⚠️  危险操作：这将删除 data/ 目录下所有文件（数据库、Excel、日志等）以及所有临时文件。")
-    print("⚠️  此操作不可恢复！")
+    ui.print_panel(
+        "[bold red]⚠️  危险操作警告 / DANGER ZONE[/bold red]\n\n"
+        "此操作将 [bold red]永久删除[/bold red] `data/` 目录下所有文件：\n"
+        " - 数据库文件 (steam_data.db)\n"
+        " - 导出文件 (Excel)\n"
+        " - 失败日志 (failures.json)\n"
+        " - 断点文件 (.checkpoint.json)\n\n"
+        "此操作不可恢复！",
+        title="重置项目 Reset Project",
+        style="red",
+    )
     
-    confirm1 = input("确认要重置吗？(y/N): ").strip().lower()
-    if confirm1 != "y":
-        print("操作已取消。")
+    if not ui.confirm("[bold red]确认要重置吗？[/bold red]"):
+        ui.print("操作已取消。")
         return
 
-    confirm2 = input("再次确认：你真的要删除所有数据吗？(y/N): ").strip().lower()
-    if confirm2 != "y":
-        print("操作已取消。")
+    if not ui.confirm("[bold red]再次确认：真的要删除所有数据吗？[/bold red]"):
+        ui.print("操作已取消。")
         return
 
-    print("\n开始重置...")
+    ui.print("\n[bold yellow]开始重置...[/bold yellow]")
     
     # 1. 清理 data 目录
     data_dir = Path(config.output.data_dir)
     if data_dir.exists():
         for item in data_dir.glob("*"):
-            if item.name == ".gitkeep": # 保留 gitkeep
+            if item.name == ".gitkeep": 
                 continue
             try:
                 if item.is_file():
                     item.unlink()
                 elif item.is_dir():
                     shutil.rmtree(item)
-                print(f"已删除: {item}")
+                ui.print(f"已删除: [dim]{item}[/dim]")
             except Exception as e:
-                print(f"删除失败 {item}: {e}")
+                ui.print_error(f"删除失败 {item}: {e}")
     else:
-        print(f"目录不存在: {data_dir}")
+        ui.print_warning(f"目录不存在: {data_dir}")
 
     # 2. 运行常规清理
-    run_clean(failure_manager)
+    run_clean(failure_manager, ui)
 
-    print("\n✨ 项目已重置。")
+    ui.print_success("✨ 项目已重置 / Project Reset Completed")
 
 
-def run_clean(failure_manager: FailureManager | None = None) -> None:
+def run_clean(failure_manager: FailureManager | None = None, ui: Optional[UIManager] = None) -> None:
     """清理缓存和临时文件。"""
+    if ui is None:
+        ui = UIManager()
+        
     project_root = Path(__file__).parent
     cleaned = 0
 
+    # ... (原有清理逻辑保持不变，但使用 ui.print) -> 这里为了简洁，直接全量替换函数体
     # 删除 __pycache__ 目录
     for pycache in project_root.rglob("__pycache__"):
         if pycache.is_dir():
             shutil.rmtree(pycache)
-            print(f"已删除: {pycache}")
+            ui.print(f"已删除: [dim]{pycache}[/dim]")
             cleaned += 1
 
     # 删除 .pyc 文件
     for pyc in project_root.rglob("*.pyc"):
         pyc.unlink()
-        print(f"已删除: {pyc}")
+        ui.print(f"已删除: [dim]{pyc}[/dim]")
         cleaned += 1
 
     # 删除断点文件
@@ -236,7 +258,7 @@ def run_clean(failure_manager: FailureManager | None = None) -> None:
     for cp in checkpoint_files:
         if cp.exists():
             cp.unlink()
-            print(f"已删除: {cp}")
+            ui.print(f"已删除: [dim]{cp}[/dim]")
             cleaned += 1
 
     # 清除失败日志
@@ -245,147 +267,180 @@ def run_clean(failure_manager: FailureManager | None = None) -> None:
         cleaned += 1
 
     if cleaned:
-        print(f"\n清理完成，共删除 {cleaned} 个文件/目录。")
+        ui.print_success(f"清理完成，共删除 {cleaned} 个文件/目录。")
     else:
-        print("没有需要清理的文件。")
+        ui.print_info("没有需要清理的文件。")
 
 
 def run_games_scraper(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager
+    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
 ) -> None:
     """运行游戏信息爬虫。"""
     checkpoint = Checkpoint(config=config) if args.resume else None
 
     scraper = GameScraper(
-        config=config, checkpoint=checkpoint, failure_manager=failure_manager
+        config=config, 
+        checkpoint=checkpoint, 
+        failure_manager=failure_manager,
+        ui_manager=ui
     )
     scraper.run(max_pages=args.pages)
 
-    print(f"游戏信息爬取完成！数据已存入 {config.output.db_path}")
+    ui.print_success(f"游戏信息爬取完成！数据已存入 [bold]{config.output.db_path}[/bold]")
 
 
 def run_reviews_scraper(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager
+    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
 ) -> None:
     """运行评价历史爬虫。"""
     checkpoint = Checkpoint(config=config) if args.resume else None
     
     scraper = ReviewScraper(
-        config=config, checkpoint=checkpoint, failure_manager=failure_manager
+        config=config, 
+        checkpoint=checkpoint, 
+        failure_manager=failure_manager,
+        ui_manager=ui
     )
 
     if args.input:
-        # 从文件读取
         scraper.scrape_from_file(args.input)
     else:
-        # 从数据库读取所有 AppID
         db = DatabaseManager(config.output.db_path)
         app_ids = db.get_all_app_ids()
         db.close()
         
         if not app_ids:
-            print("数据库中没有游戏数据，请先运行 'python main.py games'")
+            ui.print_warning("数据库中没有游戏数据，请先运行 'python main.py games'")
             return
             
         scraper.scrape_from_list(app_ids)
 
-    print(f"评价数据爬取完成！数据已存入 {config.output.db_path}")
+    ui.print_success(f"评价数据爬取完成！数据已存入 [bold]{config.output.db_path}[/bold]")
 
 
 def run_all(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager
+    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
 ) -> None:
     """运行完整爬取流程。"""
     checkpoint = Checkpoint(config=config) if args.resume else None
     
-    # 第一步：爬取游戏信息
-    print("=== 第一步：爬取游戏基础信息 ===")
+    ui.print_panel("Step 1/3: 爬取游戏基础信息", style="blue")
     game_scraper = GameScraper(
-        config=config, checkpoint=checkpoint, failure_manager=failure_manager
+        config=config, 
+        checkpoint=checkpoint, 
+        failure_manager=failure_manager,
+        ui_manager=ui
     )
     game_scraper.run(max_pages=args.pages)
 
-    # 第二步：爬取评价信息
-    print("\n=== 第二步：爬取评价历史信息 ===")
-    # 获取刚刚爬取到的所有 AppID (从数据库)
+    ui.print("\n")
+    ui.print_panel("Step 2/3: 爬取评价历史信息", style="blue")
     app_ids = game_scraper.get_app_ids()
     
     review_scraper = ReviewScraper(
-        config=config, checkpoint=checkpoint, failure_manager=failure_manager
+        config=config, 
+        checkpoint=checkpoint, 
+        failure_manager=failure_manager,
+        ui_manager=ui
     )
     review_scraper.scrape_from_list(app_ids)
 
-    # 第三步：导出
-    print("\n=== 第三步：导出数据 ===")
-    run_export(config, argparse.Namespace(output="data/steam_data.xlsx"))
+    ui.print("\n")
+    ui.print_panel("Step 3/3: 导出数据", style="blue")
+    run_export(config, argparse.Namespace(output="data/steam_data.xlsx"), ui)
 
-    print(f"\n全部完成！数据已导出至 data/steam_data.xlsx")
+    ui.print_success("🎉 全部完成！Enjoy your data.")
 
 
-def run_export(config: Config, args: argparse.Namespace) -> None:
+def run_export(config: Config, args: argparse.Namespace, ui: UIManager) -> None:
     """导出数据。"""
-    print(f"正在导出数据到 {args.output}...")
+    ui.print_info(f"正在导出数据到 [bold]{args.output}[/bold]...")
     db = DatabaseManager(config.output.db_path)
     try:
-        db.export_to_excel(args.output)
-        print("导出成功！")
+        with ui.create_progress() as progress:
+            task = progress.add_task("导出中...", total=100) # 假进度条，因为导出是阻塞的
+            progress.update(task, advance=50)
+            db.export_to_excel(args.output)
+            progress.update(task, completed=100)
+            
+        ui.print_success("导出成功！")
     except Exception as e:
-        print(f"导出失败: {e}")
+        ui.print_error(f"导出失败: {e}")
     finally:
         db.close()
-
-
+        
 def run_retry(
-    config: Config, args: argparse.Namespace, failure_manager: FailureManager
+    config: Config, args: argparse.Namespace, failure_manager: FailureManager, ui: UIManager
 ) -> None:
     """运行重试逻辑。"""
-    print("开始重试失败项目...")
+    ui.print_info("开始检查失败项目...")
 
     failures = failure_manager.get_failures()
     if not failures:
-        print("没有找到失败记录。")
+        ui.print_success("没有找到失败记录，Perfect!")
         return
 
-    game_scraper = GameScraper(config=config, failure_manager=failure_manager)
-    review_scraper = ReviewScraper(config=config, failure_manager=failure_manager)
+    # 创建表格展示失败项目
+    table = ui.create_table(title="失败任务清单")
+    table.add_column("Type", style="cyan")
+    table.add_column("ID", style="magenta")
+    table.add_column("Reason", style="red")
+    
+    for f in failures:
+         table.add_row(f["type"], str(f["id"]), f["reason"][:50]) # 截断原因
+         
+    ui.console.print(table)
+    
+    if not ui.confirm("是否立即重试这些项目？", default=True):
+         ui.print("操作已取消。")
+         return
+
+    game_scraper = GameScraper(config=config, failure_manager=failure_manager, ui_manager=ui)
+    review_scraper = ReviewScraper(config=config, failure_manager=failure_manager, ui_manager=ui)
 
     retry_count = 0
     success_count = 0
 
-    for failure in failures:
-        item_type = failure["type"]
-        item_id = int(failure["id"])
+    with ui.create_progress() as progress:
+        task = progress.add_task("重试中...", total=len(failures))
+        
+        for failure in failures:
+            item_type = failure["type"]
+            item_id = int(failure["id"])
 
-        # 根据参数过滤类型
-        if args.type != "all" and item_type != args.type:
-            continue
+            if args.type != "all" and item_type != args.type:
+                progress.update(task, advance=1)
+                continue
 
-        print(f"正在重试: [{item_type}] ID={item_id}")
-        retry_count += 1
+            retry_count += 1
+            is_success = False
+            
+            try:
+                if item_type == "game":
+                    info = game_scraper.process_game(item_id)
+                    if info:
+                        is_success = True
+                elif item_type == "review":
+                    reviews = review_scraper.scrape_reviews(item_id)
+                    if reviews:
+                        is_success = True
+            except Exception:
+                pass
+            
+            if is_success:
+                failure_manager.remove_failure(item_type, item_id)
+                success_count += 1
+                
+            progress.update(task, advance=1)
 
-        try:
-            if item_type == "game":
-                info = game_scraper.process_game(item_id)
-                if info:
-                    print(f"重试成功: {info.name}")
-                    failure_manager.remove_failure(item_type, item_id)
-                    success_count += 1
-                else:
-                    print("重试失败: 仍无法获取数据")
+    ui.print_panel(
+        f"重试结束。\n"
+        f"尝试: {retry_count}\n"
+        f"成功: [green]{success_count}[/green]\n"
+        f"剩余: [red]{retry_count - success_count}[/red]",
+        title="重试报告"
+    )
 
-            elif item_type == "review":
-                reviews = review_scraper.scrape_reviews(item_id)
-                if reviews:
-                    print(f"重试成功: 获取到 {len(reviews)} 条评价")
-                    failure_manager.remove_failure(item_type, item_id)
-                    success_count += 1
-                else:
-                    print("重试失败: 仍无评价数据")
-
-        except Exception as e:
-            print(f"重试异常: {e}")
-
-    print(f"\n重试结束。共尝试 {retry_count} 个项目，成功恢复 {success_count} 个。")
 
 
 if __name__ == "__main__":
