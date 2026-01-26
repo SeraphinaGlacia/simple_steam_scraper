@@ -116,8 +116,13 @@ python main.py reviews --resume   # Resume from checkpoint
 Exports content from SQLite database to an Excel file.
 
 ```bash
+```bash
 python main.py export
 # Output file defaults to data/steam_data.xlsx
+
+# If dataset is huge (exceeding Excel's row limit), export as CSV:
+python main.py export --format csv
+# Generates steam_games.csv and steam_reviews.csv in data/ directory
 ```
 
 ### 🔄 Retry Failures (`retry`)
