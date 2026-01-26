@@ -195,6 +195,48 @@ class DatabaseManager:
             )
             reviews_df.to_excel(writer, sheet_name="Reviews", index=False)
 
+    def export_to_csv(self, output_dir: str | Path) -> None:
+        """导出所有数据到 CSV 文件。
+
+        生成两个文件：
+        - steam_games.csv
+        - steam_reviews.csv
+
+        Args:
+            output_dir: 输出目录。
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 1. 导出 Games
+        games_df = pd.read_sql_query("SELECT * FROM games", self.conn)
+        
+        # 处理 JSON 字段还原为逗号分隔字符串
+        for col in ["developers", "publishers", "genres"]:
+            if col in games_df.columns:
+                games_df[col] = games_df[col].apply(
+                    lambda x: ", ".join(json.loads(x)) if x else ""
+                )
+        
+        games_file = output_dir / "steam_games.csv"
+        # 使用 utf-8-sig 编码，确保 Excel 打开时中文不乱码
+        games_df.to_csv(games_file, index=False, encoding="utf-8-sig")
+        print(f"Games data exported to: {games_file}")
+
+        # 2. 导出 Reviews
+        reviews_df = pd.read_sql_query(
+            """
+            SELECT r.*, g.name as game_name 
+            FROM reviews r 
+            LEFT JOIN games g ON r.app_id = g.app_id
+            ORDER BY r.app_id, r.date
+            """, 
+            self.conn
+        )
+        reviews_file = output_dir / "steam_reviews.csv"
+        reviews_df.to_csv(reviews_file, index=False, encoding="utf-8-sig")
+        print(f"Reviews data exported to: {reviews_file}")
+
     def close(self) -> None:
         """关闭数据库连接。"""
         self.conn.close()
