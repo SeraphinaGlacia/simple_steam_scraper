@@ -5,7 +5,7 @@
 
   <h1>Simple Steam Scraper</h1>
   <p>
-    <strong>A simple, efficient, and visual Steam data collection assistant.</strong>
+    <strong>A simple, efficient, and visual Steam review data scraper. Plug and play.</strong>
   </p>
   <p>
     Designed for data analysis and mining. Built on a fully asynchronous architecture, making data scraping as natural as breathing.
