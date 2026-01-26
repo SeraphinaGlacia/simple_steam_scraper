@@ -43,11 +43,12 @@ def main() -> None:
 
   # 高级用法
   python main.py all                # 完整流程：爬取游戏 -> 爬取评价 -> 导出
-  python main.py games --pages 10   # 仅测试爬取前 10 页
   python main.py all --resume       # 从上次中断处继续
+  python main.py games --pages 10   # 仅测试爬取前 10 页
 
   # 数据管理
   python main.py export             # 导出数据库到 Excel
+  python main.py export --format csv # 导出数据库到 CSV (适合大数据量)
   python main.py clean              # 清理临时文件和缓存
   python main.py reset              # 重置项目（删除所有数据，慎用！）
   python main.py retry              # 重试所有失败的任务
@@ -60,6 +61,7 @@ def main() -> None:
 输出:
   data/steam_data.db    (SQLite 数据库，核心存储)
   data/steam_data.xlsx  (Excel 导出文件，包含 Games 和 Reviews 两个工作表)
+  data/steam_*.csv      (CSV 导出文件，UTF-8-SIG 编码)
         """,
     )
 
@@ -138,7 +140,13 @@ def main() -> None:
         "--output",
         type=str,
         default="data/steam_data.xlsx",
-        help="输出文件名（默认：data/steam_data.xlsx）",
+        help="输出文件名（默认：data/steam_data.xlsx）。如果导出 CSV，此参数将被视为输出目录（默认：data/）",
+    )
+    export_parser.add_argument(
+        "--format",
+        choices=["excel", "csv"],
+        default="excel",
+        help="导出格式 (默认: excel)",
     )
 
     # 清理命令
@@ -221,13 +229,21 @@ def run_reset(config: Config, failure_manager: FailureManager, ui: UIManager) ->
         "[bold red]⚠️  危险操作警告 / DANGER ZONE[/bold red]\n\n"
         "此操作将 [bold red]永久删除[/bold red] `data/` 目录下所有文件：\n"
         " - 数据库文件 (steam_data.db)\n"
-        " - 导出文件 (Excel)\n"
+        " - 导出文件 (Excel/CSV)\n"
         " - 失败日志 (failures.json)\n"
         " - 断点文件 (.checkpoint.json)\n\n"
         "此操作不可恢复！",
         title="重置项目 Reset Project",
         style="red",
     )
+    
+    # ... (省略中间未变更代码以节省 token，如果需要请查阅) ...
+    # 实际上 replace_file_content 最好上下文完整。
+    # 这里我选择分块替换以避免太长。
+
+# 分开两个块替换更稳妥。
+# 这里只替换 export_parser 部分。
+
 
     if not ui.confirm("[bold red]确认要重置吗？[/bold red]"):
         ui.print("操作已取消。")
@@ -523,7 +539,7 @@ def run_all(
 
 def run_export(config: Config, args: argparse.Namespace, ui: UIManager) -> None:
     """导出数据。"""
-    ui.print_info(f"正在导出数据到 [bold]{args.output}[/bold]...")
+    ui.print_info(f"正在导出数据 ({args.format})...")
 
     if not Path(config.output.db_path).exists():
         ui.print_error(
@@ -537,10 +553,27 @@ def run_export(config: Config, args: argparse.Namespace, ui: UIManager) -> None:
         with ui.create_progress() as progress:
             task = progress.add_task("导出中...", total=100)  # 假进度条
             progress.update(task, advance=50)
-            db.export_to_excel(args.output)
+            
+            if args.format == "csv":
+                # CSV 模式下，args.output 被视为目录
+                # 如果用户没有指定 output，默认为 data/steam_data.xlsx，我们需要取其目录
+                # 但更合理的默认值应该是 data/
+                output_path = Path(args.output)
+                if output_path.suffix == ".xlsx":
+                     # 如果用户没改默认值，或者即使改了还是xlsx后缀，我们取其父目录
+                    output_dir = output_path.parent
+                else:
+                    output_dir = output_path
+                
+                db.export_to_csv(output_dir)
+                ui.print_success(f"导出成功！文件位于: [bold]{output_dir}[/bold]")
+            else:
+                # Excel 模式
+                db.export_to_excel(args.output)
+                ui.print_success(f"导出成功！文件: [bold]{args.output}[/bold]")
+                
             progress.update(task, completed=100)
 
-        ui.print_success("导出成功！")
     except Exception as e:
         ui.print_error(f"导出失败: {e}")
     finally:
