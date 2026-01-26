@@ -28,7 +28,7 @@
 ---
 
 > [!WARNING]
-> This documentation is translated from the [Chinese version](README.md) and may not be completely accurate.
+> This documentation is translated from the [Chinese version](README.md) by Gemini and may not be completely accurate.
 
 ## ✨ Why Choose This?
 
@@ -79,7 +79,7 @@ python main.py start
 The most commonly used all-in-one command:
 
 ```bash
-# 1. Start the complete scraping task (Games -> Reviews -> Export Excel)
+# 1. Start the complete scraping task (Games -> Reviews -> Export Excel + CSV)
 python main.py all
 
 # 2. If interrupted, resume progress

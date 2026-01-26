@@ -76,7 +76,7 @@ python main.py start
 最常用的全自动一条龙服务：
 
 ```bash
-# 1. 启动完整抓取任务（游戏信息 -> 评价历史 -> 导出 Excel）
+# 1. 启动完整抓取任务（游戏信息 -> 评价历史 -> 导出 Excel + CSV）
 python main.py all
 
 # 2. 如果任务中断，恢复进度
