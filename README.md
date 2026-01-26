@@ -114,8 +114,6 @@ python main.py reviews --resume   # 断点续传
 
 ```bash
 python main.py export
-```bash
-python main.py export
 # 输出文件默认位于 data/steam_data.xlsx
 
 # 如果数据量巨大（超过 Excel 104万行限制），可以导出为 CSV：

@@ -116,7 +116,6 @@ python main.py reviews --resume   # Resume from checkpoint
 Exports content from SQLite database to an Excel file.
 
 ```bash
-```bash
 python main.py export
 # Output file defaults to data/steam_data.xlsx
 
