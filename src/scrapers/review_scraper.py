@@ -112,9 +112,12 @@ class ReviewScraper:
 
             # 保存到数据库
             if reviews:
-                self.db.save_reviews(app_id, reviews)
-                if self.checkpoint:
-                    self.checkpoint.mark_appid_completed(app_id, "review")
+                def save_and_mark():
+                    self.db.save_reviews(app_id, reviews)
+                    if self.checkpoint:
+                        self.checkpoint.mark_appid_completed(app_id, "review")
+
+                await asyncio.get_running_loop().run_in_executor(None, save_and_mark)
 
         except Exception as e:
             error_msg = f"爬取游戏 {app_id} 评价历史失败: {e}"
