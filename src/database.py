@@ -80,11 +80,12 @@ class DatabaseManager:
 
         self.conn.commit()
 
-    def save_game(self, game: GameInfo) -> None:
+    def save_game(self, game: GameInfo, commit: bool = True) -> None:
         """保存或更新游戏信息。
 
         Args:
             game: 游戏信息对象。
+            commit: 是否立即提交事务。默认为 True。
         """
         cursor = self.conn.cursor()
         
@@ -112,6 +113,8 @@ class DatabaseManager:
                 game.description,
             ),
         )
+        if commit:
+            self.conn.commit()
 
     def commit(self) -> None:
         """提交当前事务。"""
