@@ -183,7 +183,7 @@ After running, the `data/` directory will verify:
 | `failures.json` | **Failure Log**. Records failed IDs, reasons, timestamps, etc. Deleted after successful `retry`. |
 | `.checkpoint.json` | **Progress Save**. Records completed/failed ID lists for `--resume`. Contains independent states for games and reviews. |
  
-## 📈 Workflow Diagram (Example: `games` command)
+## 📈 Workflow Diagram (Omitting `reviews` section)
 
 ```mermaid
 sequenceDiagram
