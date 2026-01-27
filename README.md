@@ -180,6 +180,53 @@ output:
 | `failures.json` | **失败日志**。记录失败的 ID、原因、时间戳等详细信息，便于排查问题。`retry` 成功后会删除对应条目。 |
 | `.checkpoint.json` | **进度存档**。记录已完成/失败的 ID 列表，用于 `--resume` 断点续传。包含 games 和 reviews 的独立状态。 |
 
+## 📈 流程示意图（以 games 命令为例）
+
+```mermaid
+sequenceDiagram
+    %% 定义参与者，使用 as 简化名称显示
+    actor User as 用户
+    participant Main as Main.py
+    participant Scraper as GameScraper
+    participant Net as HttpClient
+    participant CP as Checkpoint
+    participant DB as Database
+
+    Note over User, DB:  阶段一：启动与配置 
+    User->>Main: 输入命令: python main.py all
+    Main->>Main: 加载 Config.yaml
+    
+    Note over User, DB:  阶段二：抓取循环 
+    Main->>Scraper: 调用 run()
+    
+    loop 每一页 (Page 1 to N)
+        Scraper->>Net: 请求列表 (get)
+        Net-->>Scraper: 返回 AppID 列表
+        
+        loop 每一个游戏 (AppID)
+            Scraper->>CP: 检查状态 (is_appid_completed)
+            
+            alt [情况A: 已经存入过]
+                CP-->>Scraper: 返回 True
+                Note right of Scraper: 跳过，不发送网络请求
+            else [情况B: 没有存入过]
+                CP-->>Scraper: 返回 False
+                Scraper->>Net: 请求详情 API (get_json)
+                Net-->>Scraper: 返回 JSON 数据
+                Scraper->>DB: 存入数据库 (save_game)
+                Scraper->>CP: 标记完成 (mark_completed)
+            end
+        end
+    end
+    
+    Scraper-->>Main: 抓取结束
+
+    Note over User, DB:  阶段三：导出 
+    Main->>DB: 请求导出 (export_to_excel)
+    DB-->>Main: 生成 .xlsx 文件
+    Main-->>User: 全部完成
+```
+
 ---
 
 <div align="center">

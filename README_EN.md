@@ -182,6 +182,53 @@ After running, the `data/` directory will verify:
 | `steam_*.csv` | **CSV Dataset**. Generated for huge datasets, UTF-8-SIG encoded for Excel compatibility. |
 | `failures.json` | **Failure Log**. Records failed IDs, reasons, timestamps, etc. Deleted after successful `retry`. |
 | `.checkpoint.json` | **Progress Save**. Records completed/failed ID lists for `--resume`. Contains independent states for games and reviews. |
+ 
+## 📈 Workflow Diagram (Example: `games` command)
+
+```mermaid
+sequenceDiagram
+    %% Define participants, use 'as' for shorthand
+    actor User as User
+    participant Main as Main.py
+    participant Scraper as GameScraper
+    participant Net as HttpClient
+    participant CP as Checkpoint
+    participant DB as Database
+
+    Note over User, DB: Phase 1: Startup & Configuration
+    User->>Main: Enter command: python main.py all
+    Main->>Main: Load Config.yaml
+    
+    Note over User, DB: Phase 2: Scraping Loop
+    Main->>Scraper: Call run()
+    
+    loop Each Page (Page 1 to N)
+        Scraper->>Net: Request list (get)
+        Net-->>Scraper: Return AppID list
+        
+        loop Each Game (AppID)
+            Scraper->>CP: Check status (is_appid_completed)
+            
+            alt [Case A: Already saved]
+                CP-->>Scraper: Return True
+                Note right of Scraper: Skip, no network request sent
+            else [Case B: Not saved yet]
+                CP-->>Scraper: Return False
+                Scraper->>Net: Request details API (get_json)
+                Net-->>Scraper: Return JSON data
+                Scraper->>DB: Save to database (save_game)
+                Scraper->>CP: Mark as completed (mark_completed)
+            end
+        end
+    end
+    
+    Scraper-->>Main: Scraping finished
+
+    Note over User, DB: Phase 3: Export
+    Main->>DB: Request export (export_to_excel)
+    DB-->>Main: Generate .xlsx file
+    Main-->>User: All completed
+```
 
 ---
 
