@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import sqlite3
 from pathlib import Path
 from typing import Optional
@@ -33,6 +34,7 @@ class DatabaseManager:
         """
         self.db_path = str(db_path)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._lock = threading.Lock()
         self.init_db()
 
     def init_db(self) -> None:
@@ -86,8 +88,6 @@ class DatabaseManager:
         Args:
             game: 游戏信息对象。
         """
-        cursor = self.conn.cursor()
-        
         # 将列表转换为 JSON 字符串存储
         # 使用 JSON 而非逗号分隔，因为开发商/发行商名称本身可能包含逗号
         # ensure_ascii=False 保留中文字符的原始形式，提高可读性
@@ -95,24 +95,26 @@ class DatabaseManager:
         publishers_json = json.dumps(game.publishers, ensure_ascii=False)
         genres_json = json.dumps(game.genres, ensure_ascii=False)
 
-        cursor.execute(
-            """
-            INSERT OR REPLACE INTO games 
-            (app_id, name, release_date, price, developers, publishers, genres, description, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (
-                game.app_id,
-                game.name,
-                game.release_date,
-                game.price,
-                developers_json,
-                publishers_json,
-                genres_json,
-                game.description,
-            ),
-        )
-        self.conn.commit()
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO games
+                (app_id, name, release_date, price, developers, publishers, genres, description, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (
+                    game.app_id,
+                    game.name,
+                    game.release_date,
+                    game.price,
+                    developers_json,
+                    publishers_json,
+                    genres_json,
+                    game.description,
+                ),
+            )
+            self.conn.commit()
 
     def save_reviews(self, app_id: int, reviews: list[ReviewSnapshot]) -> None:
         """保存评价历史数据。
@@ -124,8 +126,6 @@ class DatabaseManager:
         if not reviews:
             return
 
-        cursor = self.conn.cursor()
-        
         data = [
             (
                 app_id,
@@ -136,15 +136,17 @@ class DatabaseManager:
             for review in reviews
         ]
 
-        cursor.executemany(
-            """
-            INSERT OR REPLACE INTO reviews 
-            (app_id, date, recommendations_up, recommendations_down)
-            VALUES (?, ?, ?, ?)
-            """,
-            data,
-        )
-        self.conn.commit()
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.executemany(
+                """
+                INSERT OR REPLACE INTO reviews
+                (app_id, date, recommendations_up, recommendations_down)
+                VALUES (?, ?, ?, ?)
+                """,
+                data,
+            )
+            self.conn.commit()
 
     def get_all_app_ids(self) -> list[int]:
         """获取数据库中所有已存在的 app_id。

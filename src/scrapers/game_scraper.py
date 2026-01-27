@@ -205,14 +205,14 @@ class GameScraper:
 
         if details:
             # 成功：保存到数据库，标记为完成
-            self.db.save_game(details)
+            await asyncio.to_thread(self.db.save_game, details)
             if self.checkpoint:
-                self.checkpoint.mark_appid_completed(app_id)
+                await asyncio.to_thread(self.checkpoint.mark_appid_completed, app_id)
         else:
             # 失败：标记为失败，避免后续死循环重试
             # 这些 ID 可通过 `python main.py retry` 命令专门处理
             if self.checkpoint:
-                self.checkpoint.mark_appid_failed(app_id)
+                await asyncio.to_thread(self.checkpoint.mark_appid_failed, app_id)
 
         return details, False
 
