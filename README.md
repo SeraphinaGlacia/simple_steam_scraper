@@ -5,10 +5,10 @@
 
   <h1>Steam Scraper</h1>
   <p>
-    <strong>小白都能上手的简单、高效、可视化的 Steam 评论数据爬虫。</strong>
+    <strong>A simple, efficient, and visual Steam review data scraper. Plug and play.</strong>
   </p>
   <p>
-    专为数据分析与挖掘设计。基于 AsyncIO 全异步架构，令数据抓取自然流畅。
+    Designed for data analysis and mining. Built on a fully asynchronous architecture, making data scraping as natural as breathing.
   </p>
 
   <p>
@@ -27,35 +27,38 @@
 
 ---
 
-## ✨ 为什么选择它？
+> [!WARNING]
+> This documentation is translated from the [Chinese version](README_CN.md) by Gemini and may not be completely accurate.
 
-- **⚡️ 极速采集体验**
-    - 基于 **AsyncIO** 重构的核心引擎，单机即可轻松跑满网络带宽。
-    - 智能并发控制 + 毫秒级请求间隔，在速度与反爬封锁之间找到完美平衡点。
+## ✨ Why Choose This?
 
-- **📺 美观易懂的终端界面**
-    - 看不懂代码？没有关系！本程序不止有冰冷的代码，更有美观易懂的终端界面。
-    - 集成 **Rich** 库构建，提供清晰的控制指令、进度条与统计面板。即使是**技术小白**，也能通过直观的仪表盘操作并掌握运行状态。
+- **⚡️ Blazing Fast Collection**
+    - Powered by an **AsyncIO** core engine to easily maximize your network bandwidth on a single machine.
+    - Intelligent concurrency control + millisecond-level request intervals find the perfect balance between speed and anti-bot measures.
 
-- **🛡️ 告别“从头再来”**
-    - 爬到 99% 突然断网或报错？别担心。
-    - 内置工业级 **断点续传** 机制，随时中断，随时继续。每一条已抓取的数据都会被安全保存。
+- **📺 Beautiful & Intuitive Terminal UI**
+    - Don't understand code? No problem! This program is not just cold lines of code, but features a beautiful and easy-to-understand terminal interface.
+    - Integrated with **Rich** to provide clear control instructions, progress bars, and statistical panels. Even **non-tech users** can intuitively operate and monitor the running status.
 
-- **🚀 分析即刻开始**
-    - 不仅仅是抓取，更是为了分析。
-    - 数据直接存入 **SQLite**，结构严谨；支持一键导出 **Excel** 报表，无需编写额外代码即可开始数据分析。
+- **🛡️ Say Goodbye to "Starting Over"**
+    - Internet cut off or errored out at 99%? Don't panic.
+    - Built-in industrial-grade **checkpoint resuming** mechanism lets you pause and resume anytime. Every single scrapped record is safely saved.
 
-- **🔧 零代码配置**
-    - 并发数、超时时间、目标货币区... 所有参数均可通过 `config.yaml` 调整。
-    - 即使是不懂代码的用户，也能通过简单的配置定制自己的爬虫。
+- **🚀 Ready for Analysis**
+    - Not just scraping, but for analysis.
+    - Data is stored directly into a structured **SQLite** database; supports one-click export to standard **Excel** reports, so you can start analyzing without writing extra code.
+
+- **🔧 Zero-Code Configuration**
+    - Concurrency, timeout, retry counts, target currency... all parameters can be adjusted via `config.yaml`.
+    - Even users who don't know how to code can customize their own scraper through simple configuration.
 
 ---
 
-## 🛠️ 快速开始
+## 🛠️ Quick Start
 
-### 1. 安装依赖
+### 1. Install Dependencies
 
-确保你的 Python 版本 >= 3.8。
+Ensure your Python version is >= 3.8.
 
 ```bash
 git clone https://github.com/SeraphinaGlacia/steam-scraper.git
@@ -63,170 +66,123 @@ cd steam-scraper
 pip install -r requirements.txt
 ```
 
-### 2. 体验炫酷启动页 (彩蛋🎪) 
+### 2. Experience the Splash Screen (Easter Egg 🎪) 
 
-我们在命令行帮助中隐藏了这个命令，虽然其没有实际作用，但你可以直接运行它来测试环境配置，并欣赏启动画面：
+We hid this command in the CLI help, though it serves no practical purpose, you can run it to test your environment and inspect the splash screen:
 
 ```bash
 python main.py start
 ```
 
-### 3. 标准工作流
+### 3. Standard Workflow
 
-最常用的全自动一条龙服务：
+The most commonly used all-in-one command:
 
 ```bash
-# 1. 启动完整抓取任务（游戏信息 -> 评价历史 -> 导出 Excel + CSV）
+# 1. Start the complete scraping task (Games -> Reviews -> Export Excel + CSV)
 python main.py all
 
-# 2. 如果任务中断，恢复进度
+# 2. If interrupted, resume progress
 python main.py all --resume
 ```
 
 ---
 
-## 📖 详细命令指南
+## 📖 Detailed Command Guide
 
-我们的 CLI 设计遵循 UNIX 哲学，提供丰富的子命令：
+Our CLI follows UNIX philosophy, providing rich subcommands:
 
-### 🎮 抓取游戏信息 (`games`)
+### 🎮 Scrape Game Info (`games`)
 
-仅抓取 Steam 商店的游戏基础数据（价格、开发商、好评率等）。
-
-```bash
-python main.py games              # 抓取所有分页
-python main.py games --pages 10   # 仅抓取前 10 页（适合测试）
-python main.py games --resume     # 从上次中断处继续
-```
-
-### 📝 抓取评价历史 (`reviews`)
-
-针对基础信息已写入数据库的游戏，抓取其历史评价趋势数据。
+Only scrapes basic game data (price, developer, rating, etc.) from the Steam store.
 
 ```bash
-python main.py reviews            # 抓取数据库中所有游戏的评价
-python main.py reviews --resume   # 断点续传
+python main.py games              # Scrape all pages
+python main.py games --pages 10   # Scrape only first 10 pages (for testing)
+python main.py games --resume     # Resume from last checkpoint
 ```
 
-### 📤 导出数据 (`export`)
+### 📝 Scrape Review History (`reviews`)
 
-将 SQLite 数据库中的内容导出为 Excel 文件。
+Scrapes historical review trend data for games already in the database.
+
+```bash
+python main.py reviews            # Scrape reviews for all games in DB
+python main.py reviews --resume   # Resume from checkpoint
+```
+
+### 📤 Export Data (`export`)
+
+Exports content from SQLite database to an Excel file.
 
 ```bash
 python main.py export
-# 输出文件默认位于 data/steam_data.xlsx
+# Output file defaults to data/steam_data.xlsx
 
-# 如果数据量巨大（超过 Excel 104万行限制），可以导出为 CSV：
+# If dataset is huge (exceeding Excel's row limit), export as CSV:
 python main.py export --format csv
-# 将在 data/ 目录下生成 steam_games.csv 和 steam_reviews.csv
+# Generates steam_games.csv and steam_reviews.csv in data/ directory
 ```
 
-### 🔄 失败重试 (`retry`)
+### 🔄 Retry Failures (`retry`)
 
-程序会自动记录所有失败的请求。由于网络波动导致的失败，可以通过此命令一键修复。
+The program automatically logs all failed requests. Failures due to network fluctuations can be fixed with one click using this command.
 
 ```bash
-python main.py retry              # 重试所有失败任务
-python main.py retry --type game  # 仅重试游戏信息任务
+python main.py retry              # Retry all failed tasks
+python main.py retry --type game  # Retry only game info tasks
 ```
 
-### 🧹 维护与清理 (`clean` / `reset`)
+### 🧹 Maintenance (`clean` / `reset`)
 
-保持项目整洁。
+Keep the project tidy.
 
 > [!CAUTION]
-> `reset` 命令会删除所有数据，包括数据库、导出文件、失败日志等，且不可恢复！
+> The `reset` command will delete ALL data, including database, exported files, failure logs, etc., and is irreversible!
 
 ```bash
-python main.py clean    # 清理 Python 缓存、断点文件等临时文件
-python main.py reset    # ⚠️【高危】删除数据库和所有数据，重置为初始状态
+python main.py clean    # Clean Python cache, checkpoints, and temporary files
+python main.py reset    # ⚠️ [DANGER] Delete database and all data, reset to initial state
 ```
 
 ---
 
-## ⚙️ 配置说明
+## ⚙️ Configuration
 
-所有魔法都在 `config.yaml` 中定义，你可以随心定制：
+All magic is defined in `config.yaml`, which you can customize as you wish:
 
 ```yaml
 scraper:
-  language: english       # Steam 商店语言
-  currency: us            # 货币代码
-  category: "998"         # 分类 ID（998 为游戏）
-  max_workers: 20         # 并发数（AsyncIO 模式下建议 15-20，过高可能导致 IP 封禁）
+  language: english       # Steam store language
+  currency: us            # Currency code
+  category: "998"         # Category ID (998 is for Games)
+  max_workers: 20         # Concurrency (15-20 recommended for AsyncIO, higher may trigger bans)
 
 http:
-  timeout: 30             # 请求超时（秒）
-  max_retries: 3          # 最大重试次数
-  min_delay: 0.5          # 请求间隔最小值（秒）
-  max_delay: 1.5          # 请求间隔最大值（秒）
+  timeout: 30             # Request timeout (seconds)
+  max_retries: 3          # Max retries
+  min_delay: 0.5          # Min request interval (seconds)
+  max_delay: 1.5          # Max request interval (seconds)
 
 output:
-  data_dir: ./data        # 数据输出目录
-  checkpoint_file: .checkpoint.json  # 断点文件
+  data_dir: ./data        # Data output directory
+  checkpoint_file: .checkpoint.json  # Checkpoint file
 ```
 
 ---
 
-## 📂 数据结构
+## 📂 Data Structure
 
-运行后，`data/` 目录将包含：
+After running, the `data/` directory will verify:
 
-| 文件 | 描述 |
+| File | Description |
 | :--- | :--- |
-| `steam_data.db` | **核心数据库** (SQLite)。包含 `games` 和 `reviews` 两张表，适合开发者直接查询。 |
-| `steam_data.xlsx` | **最终报表**。包含两个 Sheet，无需写代码即可分析数据。 |
-| `steam_*.csv` | **CSV 数据集**。当数据量超过 Excel 限制时生成，采用 UTF-8-SIG 编码，兼容 Excel。 |
-| `failures.json` | **失败日志**。记录失败的 ID、原因、时间戳等详细信息，便于排查问题。`retry` 成功后会删除对应条目。 |
-| `.checkpoint.json` | **进度存档**。记录已完成/失败的 ID 列表，用于 `--resume` 断点续传。包含 games 和 reviews 的独立状态。 |
-
-## 📈 流程示意图（省略 `reviews` 部分）
-
-```mermaid
-sequenceDiagram
-    %% 定义参与者，使用 as 简化名称显示
-    actor User as 用户
-    participant Main as Main.py
-    participant Scraper as GameScraper
-    participant Net as HttpClient
-    participant CP as Checkpoint
-    participant DB as Database
-
-    Note over User, DB:  阶段一：启动与配置 
-    User->>Main: 输入命令: python main.py all
-    Main->>Main: 加载 Config.yaml
-    
-    Note over User, DB:  阶段二：抓取循环 
-    Main->>Scraper: 调用 run()
-    
-    loop 每一页 (Page 1 to N)
-        Scraper->>Net: 请求列表 (get)
-        Net-->>Scraper: 返回 AppID 列表
-        
-        loop 每一个游戏 (AppID)
-            Scraper->>CP: 检查状态 (is_appid_completed)
-            
-            alt [情况A: 已经存入过]
-                CP-->>Scraper: 返回 True
-                Note right of Scraper: 跳过，不发送网络请求
-            else [情况B: 没有存入过]
-                CP-->>Scraper: 返回 False
-                Scraper->>Net: 请求详情 API (get_json)
-                Net-->>Scraper: 返回 JSON 数据
-                Scraper->>DB: 存入数据库 (save_game)
-                Scraper->>CP: 标记完成 (mark_completed)
-            end
-        end
-    end
-    
-    Scraper-->>Main: 抓取结束
-
-    Note over User, DB:  阶段三：导出 
-    Main->>DB: 请求导出 (export_to_excel)
-    DB-->>Main: 生成 .xlsx 文件
-    Main-->>User: 全部完成
-```
-
+| `steam_data.db` | **Core Database** (SQLite). Contains `games` and `reviews` tables, suitable for direct SQL queries. |
+| `steam_data.xlsx` | **Final Report**. Contains two sheets, ready for analysis without coding. |
+| `steam_*.csv` | **CSV Dataset**. Generated for huge datasets, UTF-8-SIG encoded for Excel compatibility. |
+| `failures.json` | **Failure Log**. Records failed IDs, reasons, timestamps, etc. Deleted after successful `retry`. |
+| `.checkpoint.json` | **Progress Save**. Records completed/failed ID lists for `--resume`. Contains independent states for games and reviews. |
+ 
 ---
 
 <div align="center">
