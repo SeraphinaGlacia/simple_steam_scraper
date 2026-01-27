@@ -180,70 +180,51 @@ output:
 | `failures.json` | **失败日志**。记录失败的 ID、原因、时间戳等详细信息，便于排查问题。`retry` 成功后会删除对应条目。 |
 | `.checkpoint.json` | **进度存档**。记录已完成/失败的 ID 列表，用于 `--resume` 断点续传。包含 games 和 reviews 的独立状态。 |
 
+## 📈 流程示意图（以 games 命令为例）
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    actor User as 用户 (User)
+    %% 定义参与者，使用 as 简化名称显示
+    actor User as 用户
     participant Main as Main.py
-    participant Config as Config/UI
-    participant GameScraper as GameScraper
-    participant ReviewScraper as ReviewScraper
-    participant Net as AsyncHttpClient
+    participant Scraper as GameScraper
+    participant Net as HttpClient
     participant CP as Checkpoint
     participant DB as Database
 
-    Note over User, DB: === 启动阶段 ===
+    Note over User, DB:  阶段一：启动与配置 
     User->>Main: 输入命令: python main.py all
-    Main->>Config: 加载配置 (Config.load)
-    Main->>Config: 初始化 UI (UIManager)
+    Main->>Main: 加载 Config.yaml
     
-    Note over User, DB: === 第一阶段: 抓取游戏信息 ===
-    Main->>GameScraper: 初始化 & 运行 (run)
-    GameScraper->>Net: 请求搜索页 (get_total_pages)
-    Net-->>GameScraper: 返回总页数
+    Note over User, DB:  阶段二：抓取循环 
+    Main->>Scraper: 调用 run()
     
-    loop 每一页 (异步并发)
-        GameScraper->>Net: 抓取列表页 (scrape_page_games)
-        Net-->>GameScraper: 返回 AppID 列表
+    loop 每一页 (Page 1 to N)
+        Scraper->>Net: 请求列表 (get)
+        Net-->>Scraper: 返回 AppID 列表
         
-        loop 每个 AppID
-            GameScraper->>CP: 检查: 以前抓过吗? (is_appid_completed)
-            alt 已完成 (Skip)
-                CP-->>GameScraper: 也就是"跳过"
-            else 未完成
-                GameScraper->>Net: 请求API (get_game_details)
-                Net-->>GameScraper: 返回 JSON 数据
-                GameScraper->>DB: 存入 games 表 (save_game)
-                GameScraper->>CP: 标记完成 (mark_completed)
+        loop 每一个游戏 (AppID)
+            Scraper->>CP: 检查状态 (is_appid_completed)
+            
+            alt [情况A: 已经存入过]
+                CP-->>Scraper: 返回 True
+                Note right of Scraper: 跳过，不发送网络请求
+            else [情况B: 没有存入过]
+                CP-->>Scraper: 返回 False
+                Scraper->>Net: 请求详情 API (get_json)
+                Net-->>Scraper: 返回 JSON 数据
+                Scraper->>DB: 存入数据库 (save_game)
+                Scraper->>CP: 标记完成 (mark_completed)
             end
         end
     end
-    GameScraper-->>Main: 汇报: 游戏信息抓取完毕
-
-    Note over User, DB: === 第二阶段: 抓取评价历史 ===
-    Main->>ReviewScraper: 初始化 & 运行
-    ReviewScraper->>DB: 提取: 获取所有 AppID (get_all_app_ids)
-    DB-->>ReviewScraper: 返回 ID 列表
     
-    loop 每个 AppID 异步并发
-        ReviewScraper->>CP: 检查: 以前抓过吗? (is_review_completed)
-        alt 已完成
-            CP-->>ReviewScraper: Skip
-        else 未完成
-            ReviewScraper->>Net: 请求历史数据 (scrape_reviews)
-            Net-->>ReviewScraper: 返回评价数据
-            ReviewScraper->>DB: 存入 reviews 表 (save_reviews)
-            ReviewScraper->>CP: 标记完成 (mark_review_completed)
-        end
-    end
-    ReviewScraper-->>Main: 汇报: 评价数据抓取完毕
+    Scraper-->>Main: 抓取结束
 
-    Note over User, DB: === 第三阶段: 数据导出 ===
-    Main->>DB: 导出请求 (export_to_excel)
-    DB->>DB: 读取 games 和 reviews 表
-    DB-->>Main: 生成 steam_data.xlsx
-    Main->>User: UI 显示全部完成
+    Note over User, DB:  阶段三：导出 
+    Main->>DB: 请求导出 (export_to_excel)
+    DB-->>Main: 生成 .xlsx 文件
+    Main-->>User: 全部完成
 ```
 
 ---
