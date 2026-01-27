@@ -40,6 +40,7 @@ data/*.txt
 data/*.db   
 data/*.json
 data/*.csv
+data/steam_data.*
 !data/.gitkeep
 
 # OS
