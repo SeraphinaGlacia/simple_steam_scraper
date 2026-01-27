@@ -172,7 +172,7 @@ class GameScraper:
         return app_ids
 
     async def process_game(
-        self, app_id: int, force: bool = False
+        self, app_id: int, force: bool = False, commit_db: bool = True
     ) -> tuple[Optional[GameInfo], bool]:
         """处理单个游戏：获取详情并保存。
 
@@ -184,6 +184,9 @@ class GameScraper:
         Args:
             app_id (int): Steam 游戏 ID。
             force (bool): 强制模式，跳过失败标记检查（用于 retry 场景）。默认为 False。
+            commit_db (bool): 是否立即提交数据库事务和更新断点。默认为 True。
+                - 单个处理（如 retry）时应为 True，确保数据安全。
+                - 批量处理（如 run）时应为 False，由调用方统一提交以提升性能。
 
         Returns:
             tuple[Optional[GameInfo], bool]: (游戏详情, 是否跳过重复)
@@ -204,9 +207,12 @@ class GameScraper:
         details = await self.get_game_details(app_id)
 
         if details:
-            # 成功：保存到数据库，标记为完成
-            self.db.save_game(details)
-            if self.checkpoint:
+            # 成功：保存到数据库
+            self.db.save_game(details, commit=commit_db)
+            
+            # 如果是立即提交模式（如 retry），则立即更新断点
+            # 否则（如 run 批量模式），由调用方确认 DB 提交后再更新断点
+            if commit_db and self.checkpoint:
                 self.checkpoint.mark_appid_completed(app_id)
         else:
             # 失败：标记为失败，避免后续死循环重试
@@ -259,7 +265,9 @@ class GameScraper:
                 tuple[int, Optional[GameInfo], bool]: (app_id, 游戏详情或 None, 是否跳过重复)
             """
             async with semaphore:
-                result, skipped = await self.process_game(app_id)
+                # 批量运行时 commit_db=False，由 run 方法统一提交 DB 和更新断点
+                # 确保高性能和数据一致性
+                result, skipped = await self.process_game(app_id, commit_db=False)
                 return app_id, result, skipped
 
         with self.ui.create_progress() as progress:
@@ -308,6 +316,9 @@ class GameScraper:
                 # 创建并发任务（只处理不重复的）
                 tasks = [limited_process(app_id) for app_id in unique_app_ids]
                 
+                # 用于收集本页成功抓取的 AppID，以便在数据库提交后统一更新断点
+                pending_commit_appids: list[int] = []
+
                 # 使用 asyncio.as_completed 实现实时进度更新
                 # 这会让进度条每抓完一个游戏就动一下，而不是等一页全部抓完才动
                 for future in asyncio.as_completed(tasks):
@@ -318,8 +329,12 @@ class GameScraper:
                         
                         if skipped:
                             skipped_appids.append(app_id)
+                        elif game_info:
+                            # 记录成功抓取的 AppID
+                            pending_commit_appids.append(app_id)
                         elif game_info is None and self.checkpoint:
                             # 如果返回 None 且不是因为已完成/跳过，则标记为失败
+                            # 失败状态不需要等待数据库提交，因为没有数据入库
                             if not self.checkpoint.is_appid_completed(app_id):
                                 self.checkpoint.mark_appid_failed(app_id)
                     except Exception as e:
@@ -327,11 +342,14 @@ class GameScraper:
                     finally:
                         progress.update(game_task, advance=1)
 
-                if self.checkpoint:
-                    self.checkpoint.mark_page_completed(page)
-
                 # 每处理完一页提交一次数据库，减少 IO 开销
                 self.db.commit()
+
+                # 关键修复：确保数据库提交成功后再更新断点
+                if self.checkpoint:
+                    if pending_commit_appids:
+                        self.checkpoint.mark_appids_completed(pending_commit_appids)
+                    self.checkpoint.mark_page_completed(page)
 
         # 输出跳过的重复 AppID 汇总
         if skipped_appids:
