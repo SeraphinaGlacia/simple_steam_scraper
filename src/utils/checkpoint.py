@@ -75,16 +75,16 @@ class Checkpoint:
         """获取默认的空状态结构。
 
         Returns:
-            dict: 包含 games 和 reviews 分离状态的字典。
+            dict: 包含 games 和 reviews 分离状态的字典。内部使用 set 存储。
         """
         return {
             # Games 状态
-            "completed_pages": [],
-            "completed_appids": [],
-            "failed_appids": [],
+            "completed_pages": set(),
+            "completed_appids": set(),
+            "failed_appids": set(),
             # Reviews 状态（独立）
-            "completed_review_appids": [],
-            "failed_review_appids": [],
+            "completed_review_appids": set(),
+            "failed_review_appids": set(),
         }
 
     def _load(self) -> dict:
@@ -92,6 +92,7 @@ class Checkpoint:
 
         如果文件不存在或解析失败，返回空的初始状态。
         自动迁移旧版本的状态结构（添加 reviews 相关键）。
+        加载时将列表转换为集合以支持 O(1) 查找。
 
         Returns:
             dict: 断点状态数据。
@@ -102,11 +103,19 @@ class Checkpoint:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     loaded = json.load(f)
-                    # 合并：保留已有数据，补充缺失的键
-                    for key in default:
-                        if key not in loaded:
-                            loaded[key] = default[key]
-                    return loaded
+                    # 保留加载的所有数据，避免丢失未来版本可能添加的键
+                    current_state = loaded.copy()
+                    
+                    # 仅处理已知的集合字段：将列表转换为集合
+                    for key, default_val in default.items():
+                        if key in current_state:
+                            # 确保只转换集合类型的字段
+                            if isinstance(default_val, set):
+                                current_state[key] = set(current_state[key])
+                        else:
+                            # 补齐当前版本的新增字段
+                            current_state[key] = default_val
+                    return current_state
             except (json.JSONDecodeError, IOError):
                 pass
 
@@ -116,6 +125,7 @@ class Checkpoint:
         """原子保存断点状态到文件。
 
         使用先写临时文件再重命名的方式，确保写入过程中断电或崩溃不会损坏原文件。
+        保存时将集合转换为列表以支持 JSON 序列化。
         此方法应在持有 _lock 的情况下调用。
 
         Raises:
@@ -124,8 +134,16 @@ class Checkpoint:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = self.path.with_suffix(".tmp")
 
+        # 转换为列表进行序列化（仅转换集合类型）
+        serializable_state = {}
+        for k, v in self.state.items():
+            if isinstance(v, set):
+                serializable_state[k] = list(v)
+            else:
+                serializable_state[k] = v
+
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(self.state, f, indent=2, ensure_ascii=False)
+            json.dump(serializable_state, f, indent=2, ensure_ascii=False)
 
         os.replace(tmp_path, self.path)
         self._last_save_time = time.time()
@@ -185,7 +203,7 @@ class Checkpoint:
         """
         with self._lock:
             if page not in self.state["completed_pages"]:
-                self.state["completed_pages"].append(page)
+                self.state["completed_pages"].add(page)
                 self._request_save()
 
     # ========== AppID 状态（支持 game/review）==========
@@ -216,9 +234,8 @@ class Checkpoint:
         completed_key, failed_key = self._get_keys(task_type)
         with self._lock:
             if app_id not in self.state[completed_key]:
-                self.state[completed_key].append(app_id)
-                if app_id in self.state[failed_key]:
-                    self.state[failed_key].remove(app_id)
+                self.state[completed_key].add(app_id)
+                self.state[failed_key].discard(app_id)
                 self._request_save()
 
     def mark_appids_completed(
@@ -237,10 +254,10 @@ class Checkpoint:
             changed = False
             for app_id in app_ids:
                 if app_id not in self.state[completed_key]:
-                    self.state[completed_key].append(app_id)
+                    self.state[completed_key].add(app_id)
                     changed = True
                 if app_id in self.state[failed_key]:
-                    self.state[failed_key].remove(app_id)
+                    self.state[failed_key].discard(app_id)
                     changed = True
 
             if changed:
@@ -274,7 +291,7 @@ class Checkpoint:
             if app_id in self.state[completed_key]:
                 return
             if app_id not in self.state[failed_key]:
-                self.state[failed_key].append(app_id)
+                self.state[failed_key].add(app_id)
                 self._request_save()
 
     def get_failed_appids(self, task_type: TaskType = "game") -> list[int]:
@@ -288,7 +305,7 @@ class Checkpoint:
         """
         _, failed_key = self._get_keys(task_type)
         with self._lock:
-            return self.state[failed_key].copy()
+            return list(self.state[failed_key])
 
     def get_completed_appids(self, task_type: TaskType = "game") -> list[int]:
         """获取所有已完成的 app_id 列表（线程安全）。
@@ -301,7 +318,7 @@ class Checkpoint:
         """
         completed_key, _ = self._get_keys(task_type)
         with self._lock:
-            return self.state[completed_key].copy()
+            return list(self.state[completed_key])
 
     def clear(self) -> None:
         """清除所有断点状态（线程安全）。
@@ -324,8 +341,8 @@ class Checkpoint:
         """
         completed_key, failed_key = self._get_keys(task_type)
         with self._lock:
-            self.state[completed_key] = []
-            self.state[failed_key] = []
+            self.state[completed_key] = set()
+            self.state[failed_key] = set()
             if task_type == "game":
-                self.state["completed_pages"] = []
+                self.state["completed_pages"] = set()
             self._save_to_disk()
