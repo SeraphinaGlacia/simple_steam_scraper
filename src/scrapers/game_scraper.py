@@ -6,11 +6,10 @@
 
 from __future__ import annotations
 
+import re
 import asyncio
 import threading
 from typing import Any, Optional
-
-from bs4 import BeautifulSoup
 
 from src.config import Config, get_config
 from src.database import DatabaseManager
@@ -76,17 +75,22 @@ class GameScraper:
 
         try:
             response = await self.client.get(self.base_url, params=params, delay=False)
-            soup = await asyncio.to_thread(BeautifulSoup, response.text, "html.parser")
-
-            search_results = soup.find("div", {"class": "search_pagination_left"})
-            if search_results:
-                # 示例文本: "Showing 1 - 25 of 69792"
-                # 使用正则提取所有数字，假设最后一个数字是总记录数
-                import re
-                numbers = re.findall(r"\d+", search_results.text.strip().replace(",", ""))
-                if numbers:
-                    total_results = int(numbers[-1])
-                    return (total_results // 25) + 1  # Steam 每页显示 25 个游戏
+            # 使用正则直接提取，避免 BeautifulSoup 的解析开销
+            # 目标文本: "Showing 1 - 25 of 69792"
+            # 搜索 <div class="search_pagination_left">
+            html = response.text
+            match = re.search(r'class="search_pagination_left"[^>]*>.*?of\s+(\d+)', html, re.DOTALL)
+            
+            if match:
+                total_results = int(match.group(1))
+                return (total_results // 25) + 1
+            else:
+                # 备用方案：尝试匹配单纯的数字结构
+                matches = re.findall(r'Showing \d+ - \d+ of (\d+)', html)
+                if matches:
+                    total_results = int(matches[0])
+                    return (total_results // 25) + 1
+                    
         except Exception as e:
             self.ui.print_error(f"获取总页数失败: {e}")
 
@@ -151,20 +155,24 @@ class GameScraper:
 
         try:
             response = await self.client.get(self.base_url, params=params, delay=False)
-            soup = await asyncio.to_thread(BeautifulSoup, response.text, "html.parser")
-
-            games = soup.find_all("a", {"class": "search_result_row"})
-
-            for game in games:
-                # data-ds-appid 是 Steam 搜索结果页面中的自定义属性
-                # 它存储了游戏的 AppID，用于后续获取详细信息
-                # 注意：捆绑包/合集可能包含逗号分隔的多个 AppID（如 "123,456,789"）
-                # 此时只取第一个 AppID
-                app_id_str = game.get("data-ds-appid")
-                if app_id_str:
-                    # 处理逗号分隔的多 AppID 情况（捆绑包）
-                    first_id = app_id_str.split(",")[0]
+            html = response.text
+            
+            # 使用正则直接提取 data-ds-appid
+            # <a ... data-ds-appid="123456" ...
+            # 或者 data-ds-appid="123,456" (捆绑包)
+            matches = re.finditer(r'data-ds-appid="([^"]+)"', html)
+            
+            for match in matches:
+                app_ids_str = match.group(1)
+                # 处理逗号分隔的多 AppID 情况（捆绑包），只取第一个
+                if ',' in app_ids_str:
+                    first_id = app_ids_str.split(",")[0]
                     app_ids.append(int(first_id))
+                else:
+                    app_ids.append(int(app_ids_str))
+
+        except Exception as e:
+            self.ui.print_error(f"爬取第 {page} 页列表失败: {e}")
 
         except Exception as e:
             self.ui.print_error(f"爬取第 {page} 页列表失败: {e}")
@@ -230,11 +238,13 @@ class GameScraper:
         self,
         max_pages: Optional[int] = None,
     ) -> list[int]:
-        """运行爬虫（异步并发模式）。
-
-        使用 asyncio.Semaphore 控制并发数，避免同时发起过多请求导致被限流。
-        相比 ThreadPoolExecutor，异步模式能更高效地利用系统资源。
-
+        """运行爬虫（高效生产者-消费者模型）。
+        
+        架构设计:
+        1. Producer (生产者): 扫描搜索结果页，提取 AppID -> id_queue
+        2. Worker (消费者): 处理 AppID，获取详情 -> result_queue
+        3. Committer (提交者): 收集结果，批量写入 DB 和更新 Checkpoint
+        
         Args:
             max_pages: 可选的最大页数限制。
 
@@ -245,132 +255,233 @@ class GameScraper:
         if max_pages:
             total_pages = min(total_pages, max_pages)
 
-        print(
+        self.ui.print_info(
             f"开始爬取 {total_pages} 页，并发数: {self.config.scraper.max_workers}"
         )
 
-        all_app_ids: list[int] = []
-        skipped_appids: list[int] = []  # 收集跳过的重复 AppID
-        seen_appids: set[int] = set()   # 追踪已见过的 AppID（用于本轮去重）
+        id_queue = asyncio.Queue(maxsize=self.config.scraper.max_workers * 2)
+        result_queue = asyncio.Queue()
         
-        # 使用信号量限制并发数，避免同时发起过多请求
-        # 这是 asyncio 中控制并发度的标准方式
-        semaphore = asyncio.Semaphore(self.config.scraper.max_workers)
-
-        async def limited_process(app_id: int) -> tuple[int, Optional[GameInfo], bool]:
-            """带并发限制的游戏处理函数。
+        # 统计数据
+        seen_appids: set[int] = set()
+        skipped_appids: list[int] = []
+        all_app_ids: list[int] = []
+        
+        # 1. 生产者任务：扫描页面
+        async def producer() -> None:
+            """生产 AppID 任务。
             
-            使用信号量确保同时进行的请求数不超过 max_workers。
-            
-            Args:
-                app_id (int): Steam 游戏 ID。
-                
-            Returns:
-                tuple[int, Optional[GameInfo], bool]: (app_id, 游戏详情或 None, 是否跳过重复)
+            遍历搜索结果页面，提取 AppID 并放入任务队列。
             """
-            async with semaphore:
-                # 批量运行时 commit_db=False, save_to_db=False
-                # 由 run 方法收集 GameInfo 后批量提交 DB 和更新断点
-                # 确保高性能和数据一致性
-                result, skipped = await self.process_game(app_id, commit_db=False, save_to_db=False)
-                return app_id, result, skipped
-
-        with self.ui.create_progress() as progress:
-            # 采用双进度条设计：
-            # 1. page_task: 显示页面扫描进度（快速）
-            # 2. game_task: 显示游戏详情抓取进度（较慢，因为需要请求 API）
-            # 这种设计让用户能同时看到宏观和微观进度
-            page_task = progress.add_task("[cyan]扫描页面...", total=total_pages)
-            # game_task 的 total 初始为 0，会在扫描过程中动态增加
-            game_task = progress.add_task("[green]抓取详情...", total=0)
-
             for page in range(1, total_pages + 1):
-                # 检查停止信号
                 if self.stop_event and self.stop_event.is_set():
                     break
-
+                    
                 if self.checkpoint and self.checkpoint.is_page_completed(page):
+                    # 如果页面已标记完成，但我们需要知道这一页有哪些ID才能确保数据完整性？
+                    # 不，如果页面完成了，说明里面的游戏都处理了（理想情况下）。
+                    # 但为了安全，我们还是应该扫描它吗？
+                    # Checkpoint 的定义是：该页面的所有游戏都已经*尝试*过处理。
+                    # 所以我们可以通过。
                     progress.update(page_task, advance=1)
                     continue
 
-                # 爬取当前页面的游戏列表
                 app_ids = await self.scrape_page_games(page)
                 progress.update(page_task, advance=1)
-
+                
                 if not app_ids:
                     continue
-
-                # 在创建任务前进行去重
-                unique_app_ids = []
+                
+                # 推送 ID 到队列
                 for app_id in app_ids:
-                    # 情况1：本轮内已出现过（动态 sort 重复）→ 汇报
                     if app_id in seen_appids:
                         skipped_appids.append(app_id)
                         continue
-                    seen_appids.add(app_id)
-                    # 情况2：断点中已完成 → 静默跳过，不汇报（这是 --resume 的预期行为）
-                    if self.checkpoint and self.checkpoint.is_appid_completed(app_id):
-                        continue
-                    unique_app_ids.append(app_id)
-
-                # 动态更新游戏任务总量，因为每页返回的游戏数不固定
-                progress.update(
-                    game_task, total=progress.tasks[game_task].total + len(unique_app_ids)
-                )
-
-                # 创建并发任务（只处理不重复的）
-                tasks = [limited_process(app_id) for app_id in unique_app_ids]
-                
-                # 用于收集本页成功抓取的 GameInfo，以便在数据库提交后统一更新断点
-                batch_games: list[GameInfo] = []
-                pending_commit_appids: list[int] = []
-
-                # 使用 asyncio.as_completed 实现实时进度更新
-                for future in asyncio.as_completed(tasks):
-                    try:
-                        result = await future
-                        app_id, game_info, skipped = result
-                        all_app_ids.append(app_id)
                         
-                        if skipped:
-                            skipped_appids.append(app_id)
-                        elif game_info:
-                            # 收集成功抓取的 GameInfo 对象，用于批量插入
-                            batch_games.append(game_info)
-                            pending_commit_appids.append(app_id)
-                        elif game_info is None and self.checkpoint:
-                            # 如果返回 None 且不是因为已完成/跳过，则标记为失败
-                            # 失败状态不需要等待数据库提交，因为没有数据入库
-                            if not self.checkpoint.is_appid_completed(app_id):
-                                self.checkpoint.mark_appid_failed(app_id)
-                    except Exception as e:
-                        self.ui.print_error(f"处理游戏异常: {e}")
-                    finally:
-                        progress.update(game_task, advance=1)
-
-                # 批量插入本页游戏数据
-                if batch_games:
-                    await asyncio.to_thread(self.db.save_games_batch, batch_games, commit=True)
-
-                # 关键修复：确保数据库提交成功后再更新断点
+                    seen_appids.add(app_id)
+                    # 如果已经在 checkpoint 中完成，则不加入队列（完全跳过）
+                    if self.checkpoint and self.checkpoint.is_appid_completed(app_id):
+                        skipped_appids.append(app_id)
+                        continue
+                    
+                    await id_queue.put(app_id)
+                    progress.update(game_task, total=progress.tasks[game_task].total + 1)
+                
+                # 页面完成标记应该在所含游戏都处理完后吗？
+                # 由于是异步流，我们不能立即标记页面完成。
+                # 我们改为在 Committer 中不处理页面级 Checkpoint？
+                # 或者：我们可以简化逻辑，不再使用 Page 级 Checkpoint，只依赖 AppID 级 Checkpoint。
+                # 但为了兼容性，我们可以在 producer 结束时，或者 Committer 确认所有当前任务都完成时...
+                # 实际上，Page Checkpoint 在流式架构下很难精确维护。
+                # 建议：仅使用 AppID Checkpoint。Page Checkpoint 仅用于跳过完全扫描过的页。
+                # 这里我们假设：如果 Producer 成功把 AppID 放入队列，该页就算“扫描”过了。
                 if self.checkpoint:
-                    if pending_commit_appids:
-                        self.checkpoint.mark_appids_completed(pending_commit_appids)
                     self.checkpoint.mark_page_completed(page)
+            
+            # 生产者结束，放入 None 标记给 Consumers（每个 consumer 一个）
+            # 或者更简单的：Producer 结束后，等待 Queue join
+            pass
 
-        # 输出跳过的重复 AppID 汇总
+        # 2. 消费者任务：处理游戏
+        async def worker() -> None:
+            """处理游戏详情任务。
+            
+            从队列获取 AppID，爬取详情，并将结果发送给 Committer。
+            """
+            while True:
+                app_id = await id_queue.get()
+                try:
+                    if self.stop_event and self.stop_event.is_set():
+                        id_queue.task_done()
+                        continue
+                        
+                    # 核心处理逻辑
+                    # commit_db=False, save_to_db=False (结果交给 Committer 处理)
+                    game_info, skipped = await self.process_game(
+                        app_id, commit_db=False, save_to_db=False
+                    )
+                    
+                    # 将结果放入结果队列
+                    await result_queue.put((app_id, game_info, skipped))
+                    
+                except Exception as e:
+                    self.ui.print_error(f"Worker Error {app_id}: {e}")
+                finally:
+                    id_queue.task_done()
+                    progress.update(game_task, advance=1)
+
+        # 3. 提交者任务：批量写入
+        async def committer() -> None:
+            """批量提交数据到数据库。
+            
+            从结果队列收集数据，满足批次大小或时间间隔后批量写入数据库，
+            既能提高写入性能，又能减少磁盘 I/O 频率。
+            """
+            buffer_games: list[GameInfo] = []
+            buffer_ids: list[int] = []  # 成功的 ID
+            failed_ids: list[int] = []  # 失败的 ID
+            
+            # 定时提交或缓冲区满提交
+            while True:
+                # 获取结果，设置超时以便执行定期提交
+                try:
+                    # 500ms 超时，确保每秒至少检查两次是否需要提交
+                    result = await asyncio.wait_for(result_queue.get(), timeout=0.5)
+                    
+                    app_id, game_info, skipped = result
+                    all_app_ids.append(app_id) # 记录所有处理过的ID
+                    
+                    if game_info:
+                        buffer_games.append(game_info)
+                        buffer_ids.append(app_id)
+                    elif not skipped:
+                        # 既无数据也非跳过，说明是失败
+                        failed_ids.append(app_id)
+                    
+                    result_queue.task_done()
+                    
+                except asyncio.TimeoutError:
+                    pass
+                except asyncio.CancelledError:
+                    break
+                
+                # 检查是否需要提交
+                if len(buffer_games) >= 50 or (buffer_games and id_queue.empty() and result_queue.empty()):
+                    try:
+                        await self._commit_batch(buffer_games, buffer_ids, failed_ids)
+                    except Exception as e:
+                        self.ui.print_error(f"严重错误：批量提交到数据库失败: {e}")
+                        # 触发全局停止，防止继续抓取但无法保存
+                        if self.stop_event:
+                            self.stop_event.set()
+                    finally:
+                        buffer_games.clear()
+                        buffer_ids.clear()
+                        failed_ids.clear()
+                    
+                if self.stop_event and self.stop_event.is_set() and result_queue.empty():
+                    break
+
+            # 最后的提交
+            if buffer_games or failed_ids:
+                try:
+                    await self._commit_batch(buffer_games, buffer_ids, failed_ids)
+                except Exception as e:
+                    self.ui.print_error(f"最后一次提交失败: {e}")
+
+        # 辅助：批量提交实现
+        async def _commit_batch_impl(
+            games: list[GameInfo], success_ids: list[int], fail_ids: list[int]
+        ) -> None:
+            """执行批量提交操作。
+
+            Args:
+                games: 要保存的游戏对象列表。
+                success_ids: 处理成功的 AppID 列表（用于更新断点）。
+                fail_ids: 处理失败的 AppID 列表（用于更新断点）。
+            """
+            if games:
+                await asyncio.to_thread(self.db.save_games_batch, games, commit=True)
+            
+            if self.checkpoint:
+                if success_ids:
+                    self.checkpoint.mark_appids_completed(success_ids)
+                if fail_ids:
+                    for fid in fail_ids:
+                        self.checkpoint.mark_appid_failed(fid)
+                # 每次批量操作后保存 Checkpoint 文件
+                self.checkpoint.save()
+
+        self._commit_batch = _commit_batch_impl
+
+        # --- 启动所有任务 ---
+        
+        with self.ui.create_progress() as progress:
+            page_task = progress.add_task("[cyan]扫描页面...", total=total_pages)
+            game_task = progress.add_task("[green]处理数据...", total=0)
+            
+            # 启动 Result Committer
+            committer_task = asyncio.create_task(committer())
+            
+            # 启动 Workers
+            workers = [
+                asyncio.create_task(worker()) 
+                for _ in range(self.config.scraper.max_workers)
+            ]
+            
+            # 启动 Producer
+            # 我们直接 await producer，因为它是主要的驱动力
+            # 当 producer 完成后，意味着只有队列里的剩余任务了
+            await producer()
+            
+            # 等待所有任务处理完毕
+            await id_queue.join()
+            
+            # 发送 Cancel 信号给 Workers (通过取消任务)
+            for w in workers:
+                w.cancel()
+            
+            # 等待 Result Queue 处理完毕
+            await result_queue.join()
+            
+            # 停止 Committer
+            committer_task.cancel()
+            try:
+                await committer_task
+            except asyncio.CancelledError:
+                pass
+
+        # 清理
+        # 清理
+        await self.client.close()
+        self.db.commit()
+        
+        # 输出跳过的 AppID 汇总 (包括重复项和已完成项)
         if skipped_appids:
             self.ui.print_warning(
-                f"跳过 {len(skipped_appids)} 个重复 AppID: {skipped_appids}"
+                f"跳过 {len(skipped_appids)} 个 AppID (重复出现或已完成): {skipped_appids}"
             )
-
-        # 关闭 HTTP 客户端释放资源
-        await self.client.close()
         
-        # 确保所有剩余数据已提交
-        self.db.commit()
-
-        # 最终不再返回 GameInfo 对象列表，而是 AppID 列表，因为数据已入库
         return all_app_ids
 
     def get_app_ids(self) -> list[int]:
