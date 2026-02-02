@@ -20,6 +20,10 @@ from typing import Any, Optional
 import httpx
 import requests
 import urllib3
+try:
+    import orjson
+except ImportError:
+    orjson = None
 
 from src.config import Config, get_config
 
@@ -55,9 +59,14 @@ class AsyncHttpClient:
             httpx.AsyncClient: 异步客户端实例。
         """
         if self._client is None:
+            limits = httpx.Limits(
+                max_connections=self.config.http.max_connections,
+                max_keepalive_connections=self.config.http.max_keepalive_connections,
+            )
             self._client = httpx.AsyncClient(
                 headers={"User-Agent": self.config.http.user_agent},
                 timeout=httpx.Timeout(self.config.http.timeout),
+                limits=limits,
                 # 禁用 SSL 验证以兼容某些网络环境
                 # Steam API 在某些地区可能存在证书问题
                 verify=False,
@@ -130,6 +139,14 @@ class AsyncHttpClient:
             dict: JSON 响应数据。
         """
         response = await self.get(url, params, delay)
+        
+        # 尝试使用 orjson 解析，速度更快
+        if orjson is not None:
+            try:
+                return orjson.loads(response.content)
+            except Exception:
+                pass
+                
         return response.json()
 
     async def _delay(self) -> None:

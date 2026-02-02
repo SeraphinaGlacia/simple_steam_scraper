@@ -30,6 +30,9 @@ class HttpConfig:
     max_retries: int = 3
     min_delay: float = 0.5
     max_delay: float = 1.5
+    # 连接池配置
+    max_connections: int = 100
+    max_keepalive_connections: int = 20
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
