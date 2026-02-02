@@ -263,13 +263,16 @@ class GameScraper:
         result_queue = asyncio.Queue()
         
         # 统计数据
-        # 统计数据
         seen_appids: set[int] = set()
-        skipped_appids: list[int] = []  # 收集跳过的 AppID (重复或已完成)
+        skipped_appids: list[int] = []
         all_app_ids: list[int] = []
         
         # 1. 生产者任务：扫描页面
-        async def producer():
+        async def producer() -> None:
+            """生产 AppID 任务。
+            
+            遍历搜索结果页面，提取 AppID 并放入任务队列。
+            """
             for page in range(1, total_pages + 1):
                 if self.stop_event and self.stop_event.is_set():
                     break
@@ -289,7 +292,6 @@ class GameScraper:
                 if not app_ids:
                     continue
                 
-                # 推送 ID 到队列
                 # 推送 ID 到队列
                 for app_id in app_ids:
                     if app_id in seen_appids:
@@ -321,7 +323,11 @@ class GameScraper:
             pass
 
         # 2. 消费者任务：处理游戏
-        async def worker():
+        async def worker() -> None:
+            """处理游戏详情任务。
+            
+            从队列获取 AppID，爬取详情，并将结果发送给 Committer。
+            """
             while True:
                 app_id = await id_queue.get()
                 try:
@@ -345,7 +351,12 @@ class GameScraper:
                     progress.update(game_task, advance=1)
 
         # 3. 提交者任务：批量写入
-        async def committer():
+        async def committer() -> None:
+            """批量提交数据到数据库。
+            
+            从结果队列收集数据，满足批次大小或时间间隔后批量写入数据库，
+            既能提高写入性能，又能减少磁盘 I/O 频率。
+            """
             buffer_games: list[GameInfo] = []
             buffer_ids: list[int] = []  # 成功的 ID
             failed_ids: list[int] = []  # 失败的 ID
@@ -389,7 +400,16 @@ class GameScraper:
                 await self._commit_batch(buffer_games, buffer_ids, failed_ids)
 
         # 辅助：批量提交实现
-        async def _commit_batch_impl(games, success_ids, fail_ids):
+        async def _commit_batch_impl(
+            games: list[GameInfo], success_ids: list[int], fail_ids: list[int]
+        ) -> None:
+            """执行批量提交操作。
+
+            Args:
+                games: 要保存的游戏对象列表。
+                success_ids: 处理成功的 AppID 列表（用于更新断点）。
+                fail_ids: 处理失败的 AppID 列表（用于更新断点）。
+            """
             if games:
                 await asyncio.to_thread(self.db.save_games_batch, games, commit=True)
             

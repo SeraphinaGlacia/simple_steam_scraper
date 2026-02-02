@@ -348,7 +348,15 @@ def run_clean(
 def _get_game_failures(
     failure_manager: FailureManager, checkpoint: Checkpoint
 ) -> list[dict]:
-    """获取所有 games 类型的失败记录（合并两个来源）。"""
+    """获取所有 games 类型的失败记录（合并两个来源）。
+
+    Args:
+        failure_manager: 失败记录管理器。
+        checkpoint: 断点管理器。
+
+    Returns:
+        list[dict]: 失败记录列表。
+    """
     failures = failure_manager.get_failures("game")
     existing_ids = {f["id"] for f in failures}
 
@@ -371,7 +379,15 @@ async def run_games_scraper_async(
     ui: UIManager,
     stop_event: threading.Event,
 ) -> None:
-    """异步运行游戏信息爬虫逻辑。"""
+    """异步运行游戏信息爬虫逻辑。
+
+    Args:
+        config: 配置对象。
+        args: 命令行参数。
+        failure_manager: 失败管理器。
+        ui: UI 管理器。
+        stop_event: 停止事件标志。
+    """
     checkpoint = Checkpoint(config=config)
     if not args.resume:
         checkpoint.clear_task("game")  # 只清除 games 状态
@@ -393,7 +409,7 @@ async def run_games_scraper_async(
     elapsed = time.time() - start_time
     duration = str(timedelta(seconds=int(elapsed)))
 
-    # 统一路径显示格式
+    # 为路径添加前缀，确保终端输出中点击行为一致且美观
     db_path = str(config.output.db_path)
     if not db_path.startswith("./") and not db_path.startswith("/"):
         db_path = f"./{db_path}"
@@ -421,10 +437,18 @@ async def run_reviews_scraper_async(
     ui: UIManager,
     stop_event: threading.Event,
 ) -> None:
-    """异步运行评价历史爬虫逻辑。"""
+    """异步运行评价历史爬虫逻辑。
+
+    Args:
+        config: 配置对象。
+        args: 命令行参数。
+        failure_manager: 失败管理器。
+        ui: UI 管理器。
+        stop_event: 停止事件标志。
+    """
     checkpoint = Checkpoint(config=config)
 
-    # 检查是否存在 games 失败记录
+    # 确保在爬取评价前游戏数据完整，避免外键约束错误或数据缺失
     game_failures = _get_game_failures(failure_manager, checkpoint)
     if game_failures:
         ui.print_warning(
@@ -467,7 +491,7 @@ async def run_reviews_scraper_async(
     elapsed = time.time() - start_time
     duration = str(timedelta(seconds=int(elapsed)))
 
-    # 统一路径显示格式
+    # 为路径添加前缀，确保终端输出中点击行为一致且美观
     db_path = str(config.output.db_path)
     if not db_path.startswith("./") and not db_path.startswith("/"):
         db_path = f"./{db_path}"
@@ -495,7 +519,15 @@ async def run_all_async(
     ui: UIManager,
     stop_event: threading.Event,
 ) -> None:
-    """异步运行完整爬取流程逻辑。"""
+    """异步运行完整爬取流程逻辑。
+
+    Args:
+        config: 配置对象。
+        args: 命令行参数。
+        failure_manager: 失败管理器。
+        ui: UI 管理器。
+        stop_event: 停止事件标志。
+    """
     checkpoint = Checkpoint(config=config)
     if not args.resume:
         checkpoint.clear()
@@ -514,7 +546,7 @@ async def run_all_async(
         # 阶段性保存，防止Step 2崩溃导致Step 1进度丢失
         checkpoint.save()
         
-        # 统一路径显示格式
+        # 为路径添加前缀，确保终端输出中点击行为一致且美观
         db_path = str(config.output.db_path)
         if not db_path.startswith("./") and not db_path.startswith("/"):
             db_path = f"./{db_path}"
@@ -550,7 +582,7 @@ async def run_all_async(
         await review_scraper.scrape_from_list(app_ids)
         checkpoint.save()
         
-        # 统一路径显示格式
+        # 为路径添加前缀，确保终端输出中点击行为一致且美观
         db_path = str(config.output.db_path)
         if not db_path.startswith("./") and not db_path.startswith("/"):
             db_path = f"./{db_path}"
@@ -599,7 +631,8 @@ def run_export(config: Config, args: argparse.Namespace, ui: UIManager) -> None:
     db = DatabaseManager(config.output.db_path)
     try:
         with ui.create_progress() as progress:
-            task = progress.add_task("导出中...", total=100)  # 假进度条
+            # 导出操作较快，使用模拟进度条提升用户体验
+            task = progress.add_task("导出中...", total=100)
             progress.update(task, advance=50)
             
             if args.format == "csv":
@@ -647,7 +680,14 @@ async def run_retry_async(
     failure_manager: FailureManager,
     ui: UIManager,
 ) -> None:
-    """异步运行重试逻辑。"""
+    """异步运行重试逻辑。
+
+    Args:
+        config: 配置对象。
+        args: 命令行参数。
+        failure_manager: 失败管理器。
+        ui: UI 管理器。
+    """
     ui.print_info("开始检查失败项目...")
 
     # 1. 从 FailureManager 获取失败记录
