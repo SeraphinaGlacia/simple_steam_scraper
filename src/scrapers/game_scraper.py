@@ -387,17 +387,27 @@ class GameScraper:
                 
                 # 检查是否需要提交
                 if len(buffer_games) >= 50 or (buffer_games and id_queue.empty() and result_queue.empty()):
-                    await self._commit_batch(buffer_games, buffer_ids, failed_ids)
-                    buffer_games.clear()
-                    buffer_ids.clear()
-                    failed_ids.clear()
+                    try:
+                        await self._commit_batch(buffer_games, buffer_ids, failed_ids)
+                    except Exception as e:
+                        self.ui.print_error(f"严重错误：批量提交到数据库失败: {e}")
+                        # 触发全局停止，防止继续抓取但无法保存
+                        if self.stop_event:
+                            self.stop_event.set()
+                    finally:
+                        buffer_games.clear()
+                        buffer_ids.clear()
+                        failed_ids.clear()
                     
                 if self.stop_event and self.stop_event.is_set() and result_queue.empty():
                     break
 
             # 最后的提交
             if buffer_games or failed_ids:
-                await self._commit_batch(buffer_games, buffer_ids, failed_ids)
+                try:
+                    await self._commit_batch(buffer_games, buffer_ids, failed_ids)
+                except Exception as e:
+                    self.ui.print_error(f"最后一次提交失败: {e}")
 
         # 辅助：批量提交实现
         async def _commit_batch_impl(

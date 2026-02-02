@@ -228,10 +228,17 @@ class ReviewScraper:
 
                     # 批量提交逻辑
                     if len(pending_app_ids) >= BATCH_SIZE:
-                        self.db.commit()
-                        if self.checkpoint:
-                            self.checkpoint.mark_appids_completed(pending_app_ids, "review")
-                        pending_app_ids = []
+                        try:
+                            await asyncio.to_thread(self.db.commit)
+                            if self.checkpoint:
+                                self.checkpoint.mark_appids_completed(pending_app_ids, "review")
+                        except Exception as e:
+                            self.ui.print_error(f"严重错误：批量提交到数据库失败: {e}")
+                            if self.stop_event:
+                                self.stop_event.set()
+                        finally:
+                            # 无论成功失败都清空，防止死循环
+                            pending_app_ids = []
 
                 except Exception as e:
                     self.ui.print_error(f"处理评价异常: {e}")
@@ -240,9 +247,12 @@ class ReviewScraper:
 
             # 处理剩余的未提交数据
             if pending_app_ids:
-                self.db.commit()
-                if self.checkpoint:
-                    self.checkpoint.mark_appids_completed(pending_app_ids, "review")
+                try:
+                    await asyncio.to_thread(self.db.commit)
+                    if self.checkpoint:
+                        self.checkpoint.mark_appids_completed(pending_app_ids, "review")
+                except Exception as e:
+                     self.ui.print_error(f"最后一次提交评价数据失败: {e}")
 
         # 输出跳过的重复 AppID 汇总（只汇报本轮内动态重复）
         if skipped_appids:
