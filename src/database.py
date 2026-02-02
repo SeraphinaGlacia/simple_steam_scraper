@@ -210,9 +210,7 @@ class DatabaseManager:
         if commit:
             self.conn.commit()
 
-    def commit(self) -> None:
-        """手动提交当前事务。"""
-        self.conn.commit()
+
 
     def get_all_app_ids(self) -> list[int]:
         """获取数据库中所有已存在的 app_id。
