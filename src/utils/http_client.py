@@ -67,11 +67,14 @@ class AsyncHttpClient:
                 headers={"User-Agent": self.config.http.user_agent},
                 timeout=httpx.Timeout(self.config.http.timeout),
                 limits=limits,
+                # 启用 HTTP/2 协议，利用多路复用减少连接延迟
+                http2=True,
                 # 禁用 SSL 验证以兼容某些网络环境
                 # Steam API 在某些地区可能存在证书问题
                 verify=False,
             )
         return self._client
+
 
     async def get(
         self,
