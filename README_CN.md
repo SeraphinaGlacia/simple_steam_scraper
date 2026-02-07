@@ -5,7 +5,7 @@
 
   <h1>Steam Scraper</h1>
   <p>
-    <strong>小白都能上手的简单、高效、可视化的 Steam 评论数据爬虫。</strong>
+    <strong>极其简单、高效、可视化的 Steam 评论数据爬虫。</strong>
   </p>
   <p>
     专为数据分析与挖掘设计。基于 AsyncIO 全异步架构，令数据抓取自然流畅。
